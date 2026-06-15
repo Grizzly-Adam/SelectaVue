@@ -55,6 +55,7 @@ sub init()
     m.previewMuted = false
     m.errorVisible = false
     m.bufferVisible = false
+    m.playlistPanelActive = true
     m.bitrateRetryDone = false
     m.stallRetryCount = 0
     m.lastBufferPct = -1
@@ -135,7 +136,7 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
                 m.previewVideo.trickplaybarvisibilityauto = true
                 hideBufferBar()
 
-                ' If still buffering, reshow bar in browse position
+                ' If still buffering, reshow bar in grid position
                 if m.previewVideo.state = "buffering" then
                     m.bufferContainer.translation = [1467, 252]
                     m.bufferContainer.width = 283
@@ -148,7 +149,7 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
                 hideOverlay()
                 m.channelList.visible = true
                 m.sidePanel.visible = true
-                showBrowseOverlays()
+                showGridOverlays()
                 m.isPlayingVideo = false
                 m.top.backgroundURI = ""
     m.top.backgroundColor = "0x024c48FF"
@@ -160,16 +161,16 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
                 m.focusTrap.SetFocus(true)
                 result = true
             else if(key = "left")
-                print ">>> OVERLAY: Left arrow key pressed"
-                print ">>> OVERLAY: overlayVisible = "; m.overlayVisible
-                print ">>> OVERLAY: allChannels = "; m.allChannels
+                print ">>> QUICKMENU: Left arrow - toggling quick menu"
+                print ">>> QUICKMENU: quickMenuVisible = "; m.overlayVisible
+                print ">>> QUICKMENU: allChannels = "; m.allChannels
                 
                 if m.overlayVisible then
-                    print ">>> OVERLAY: Hiding overlay"
+                    print ">>> QUICKMENU: Hiding quick menu"
                     hideOverlay()
                     m.top.setFocus(true)
                 else
-                    print ">>> OVERLAY: Showing overlay"
+                    print ">>> QUICKMENU: Showing quick menu"
                     if m.allChannels <> invalid then
                         m.channelOverlay.visible = true
                         m.overlayVisible = true
@@ -177,9 +178,9 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
                         m.channelOverlayList.jumpToItem = m.currentChannelIndex
                         m.channelOverlayList.itemFocused = m.currentChannelIndex
                         m.top.setFocus(true)
-                        print ">>> OVERLAY: Overlay visible, channels loaded"
+                        print ">>> QUICKMENU: Quick menu visible, channels loaded"
                     else
-                        print ">>> OVERLAY ERROR: No channels available (m.allChannels are invalid)"
+                        print ">>> OVERLAY ERROR: No channels available for quick menu"
                     end if
                 end if
                 result = true
@@ -228,7 +229,7 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
             else if(key = "OK")
                 ' Display the options menu only when the video is already playing
                 if m.suppressNextVideoOptionsMenu then
-                    print ">>> KEY OK: Suppressing options menu after overlay channel selection"
+                    print ">>> KEY OK: Suppressing options menu after quick menu channel selection"
                     clearOverlayOkSuppression()
                     result = true
                 else if m.overlayVisible then
@@ -271,15 +272,21 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
                 m.channelList.jumpToItem = newIndex
                 result = true
             else if(key = "right")
-                m.previewMuted = not m.previewMuted
-                if m.previewVideo <> invalid then
-                    m.previewVideo.mute = m.previewMuted
+                if m.playlistPanelActive then
+                    m.playlistPanelActive = false
+                    m.focusTrap.SetFocus(true)
+                else
+                    m.previewMuted = not m.previewMuted
+                    if m.previewVideo <> invalid then
+                        m.previewVideo.mute = m.previewMuted
+                    end if
+                    updatePreviewHint()
+                    showMuteIndicator()
                 end if
-                updatePreviewHint()
-                showMuteIndicator()
                 result = true
             else if(key = "left")
                 m.sidePanel.visible = true
+                m.playlistPanelActive = true
                 m.playlistList.SetFocus(true)
                 result = true
             else if(key = "replay")
@@ -294,9 +301,16 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
             else if(key = "OK")
                 channel = m.flatChannelList[m.currentChannelIndex]
                 if channel <> invalid then
-                    m.suppressNextVideoOptionsMenu = true
-                    startOverlayOkSuppressionTimer()
-                    playChannel(channel)
+                    ' Single OK = load preview, double OK = fullscreen
+                    if m.previewVideo.content <> invalid and m.previewVideo.content.url = channel.url then
+                        print ">>> GRID: Double OK - going fullscreen"
+                        m.suppressNextVideoOptionsMenu = true
+                        startOverlayOkSuppressionTimer()
+                        playChannel(channel)
+                    else
+                        print ">>> GRID: Single OK - loading preview"
+                        playPreviewChannel(m.currentChannelIndex)
+                    end if
                 end if
                 result = true
             end if
@@ -872,7 +886,7 @@ sub checkState()
         hideBufferBar()
         cancelStallTimer()
         errorMsg = m.previewVideo.errorMsg
-        ' Auto-retry on bitrate errors before showing the error overlay
+        ' Auto-retry on bitrate errors before showing error
         if not m.bitrateRetryDone and LCase(errorMsg).InStr("bitrate") >= 0 then
             print ">>> BITRATE RETRY: No valid bitrates, retrying with relaxed constraints"
             m.bitrateRetryDone = true
@@ -986,14 +1000,31 @@ sub jumpToGroup(direction as Integer)
     channel = m.flatChannelList[targetIndex]
     if channel = invalid then return
 
-    showChannelInfo(channel)
+    if m.isPlayingVideo then showChannelInfo(channel)
 
     if m.isPlayingVideo then
         if m.overlayVisible then
-            ' Jump group in overlay list
-            lastOfCurrentGroup = m.groupBoundaries[targetGroup].startIndex - 1
-            if lastOfCurrentGroup >= 0 then
-                m.channelOverlayList.jumpToItem = lastOfCurrentGroup
+            ' Jump group in quick menu list
+            ' For wrap-around, jump to opposite end first so animation goes the right way
+            if direction > 0 then
+                ' FF: jump to last item of current group, animate forward past header
+                lastOfCurrent = m.groupBoundaries[targetGroup].startIndex - 1
+                if lastOfCurrent >= 0 then
+                    m.channelOverlayList.jumpToItem = lastOfCurrent
+                end if
+            else
+                ' Rewind: jump to last item of group before target, animate down past header
+                prevGroup = targetGroup - 1
+                if prevGroup >= 0 then
+                    if prevGroup < m.groupBoundaries.Count() - 1 then
+                        lastOfPrev = m.groupBoundaries[prevGroup + 1].startIndex - 1
+                    else
+                        lastOfPrev = m.flatChannelList.Count() - 1
+                    end if
+                else
+                    lastOfPrev = m.flatChannelList.Count() - 1
+                end if
+                m.channelOverlayList.jumpToItem = lastOfPrev
             end if
             m.pendingGroupJumpIndex = targetIndex
             m.pendingGroupJumpTarget = "overlay"
@@ -1007,13 +1038,28 @@ sub jumpToGroup(direction as Integer)
         end if
     else
         m.currentChannelIndex = targetIndex
-        ' Jump to last item of current group, wait 1 second, then jump to target
-        ' so the section header is briefly visible before moving on
-        lastOfCurrentGroup = m.groupBoundaries[targetGroup].startIndex - 1
-        if lastOfCurrentGroup >= 0 then
-            m.channelList.jumpToItem = lastOfCurrentGroup
+        ' Jump to boundary item so section header is visible, then animate to target
+        ' For FF: jump to last item of current group (animate forward past header)
+        ' For rewind: jump to first item of target group + 1 (animate backward past header)
+        if direction > 0 then
+            ' FF: jump to last item of current group, animate forward past header
+            if targetGroup > 0 then
+                lastOfCurrent = m.groupBoundaries[targetGroup].startIndex - 1
+            else
+                lastOfCurrent = m.flatChannelList.Count() - 1
+            end if
+            m.channelList.jumpToItem = lastOfCurrent
+        else
+            ' Rewind: jump to item just before the target group's header, animate forward
+            if targetGroup > 0 then
+                justBefore = m.groupBoundaries[targetGroup].startIndex - 1
+            else
+                justBefore = m.flatChannelList.Count() - 1
+            end if
+            m.channelList.jumpToItem = justBefore
         end if
         m.pendingGroupJumpIndex = targetIndex
+        m.pendingGroupJumpTarget = "grid"
         m.groupJumpTimer = CreateObject("roSGNode", "Timer")
         m.groupJumpTimer.duration = 1.0
         m.groupJumpTimer.repeat = false
@@ -1076,7 +1122,7 @@ sub showChannelInfo(channel as Object)
     showClock()
     m.channelInfoOverlay.visible = true
     
-    ' Create a timer to hide the overlay after 3 seconds
+    ' Create a timer to hide the quick menu after 3 seconds
     if m.channelInfoTimer <> invalid then
         m.channelInfoTimer.control = "stop"
     end if
@@ -1442,19 +1488,16 @@ end function
 ' ==================== Channel Preview ====================
 
 sub onChannelFocused()
-    ' Update channel preview on selection change
     if m.isPlayingVideo then return
     if m.channelList = invalid then return
 
     focusedIndex = m.channelList.itemFocused
-    print ">>> PREVIEW: Channel focus = "; focusedIndex
+    print ">>> GRID: Channel focused = "; focusedIndex
 
-    ' Retrieve the focused channel
     channel = getChannelByFocusIndex(focusedIndex)
     if channel <> invalid then
         m.lastFocusedChannel = focusedIndex
         m.currentChannelIndex = focusedIndex
-        playPreviewChannel(focusedIndex)
     end if
 end sub
 
@@ -1721,7 +1764,7 @@ sub showBufferBar()
         m.bufferTrack.width = 794
         m.bufferLabel.width = 800
     else
-        ' Browse - centered in visible 4:3 preview area (x=1440, width=384)
+        ' Grid - centered in visible 4:3 preview area (x=1440, width=384)
         m.bufferContainer.translation = [1467, 252]
         m.bufferContainer.width = 283
         m.bufferTrack.width = 277
@@ -1766,7 +1809,7 @@ sub hideBufferBar()
     m.bufferVisible = false
 end sub
 
-sub showBrowseOverlays()
+sub showGridOverlays()
     if m.videoClipLeft <> invalid then m.videoClipLeft.visible = true
     if m.muteHintContainer <> invalid then m.muteHintContainer.visible = true
     if m.tvOverlay <> invalid then m.tvOverlay.visible = true
@@ -1776,7 +1819,7 @@ sub showBrowseOverlays()
     end if
 end sub
 
-sub hideBrowseOverlays()
+sub hideGridOverlays()
     if m.videoClipLeft <> invalid then m.videoClipLeft.visible = false
     if m.muteHintContainer <> invalid then m.muteHintContainer.visible = false
     if m.tvOverlay <> invalid then m.tvOverlay.visible = false
@@ -1882,9 +1925,24 @@ sub updatePreviewHint()
 end sub
 
 sub onChannelSelected()
-    m.suppressNextVideoOptionsMenu = true
-    startOverlayOkSuppressionTimer()
-    selectChannelFromList(m.channelList)
+    if m.channelList = invalid then return
+    focusedIndex = m.channelList.itemFocused
+    channel = getChannelByFocusIndex(focusedIndex)
+    if channel = invalid then return
+
+    ' If preview is already playing this channel, go fullscreen (double OK)
+    if m.previewVideo.content <> invalid and m.previewVideo.content.url = channel.url then
+        print ">>> GRID: Double OK - going fullscreen"
+        m.suppressNextVideoOptionsMenu = true
+        startOverlayOkSuppressionTimer()
+        playChannel(channel)
+    else
+        ' Single OK - load preview
+        print ">>> GRID: Single OK - loading preview"
+        m.currentChannelIndex = focusedIndex
+        playPreviewChannel(focusedIndex)
+        showChannelInfo(channel)
+    end if
 end sub
 
 sub onOverlayChannelSelected()
@@ -2038,9 +2096,8 @@ sub playChannel(content as Object)
 		print ">>> PLAY: Already playing, expanding to fullscreen"
 	end if
 
-	' Unmute when going fullscreen
-	m.previewMuted = false
-	m.previewVideo.mute = false
+	' Unmute when going fullscreen only if not already muted
+	m.previewVideo.mute = m.previewMuted
 
 	m.top.backgroundURI = ""
 	m.top.backgroundColor = "0x024c48FF"
@@ -2052,7 +2109,7 @@ sub playChannel(content as Object)
 
 	m.channelList.visible = false
 	m.sidePanel.visible = false
-	hideBrowseOverlays()
+	hideGridOverlays()
 
 	' If buffer bar is visible, reposition it for fullscreen instead of hiding it
 	if m.bufferVisible then

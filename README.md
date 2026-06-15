@@ -1,70 +1,99 @@
-# SelectaVue IPTV player
+# SelectaVue IPTV Player
 
-SelectaVue manages and plays M3U playlists with a simple interface that can be quickly and easily navigated.
+SelectaVue manages and plays M3U playlists with a clean, fast interface built for easy and intuitive navigation across multiple playlists.
 
 ## 🎯 Features
 
-- **Simple list** - Easily navigate and flip through channels across multiple playlists
-- **Multiple M3U playlists** - Save new playlist and quickly switch between these
-- **Channel surf** - Switch channels with up and down arrows while watching TV
-- **Quick menu** - Press ← and browse through playlist channels without pausing the video
-- **Preview** - See the selected channel in thumbnail format as you browse the channel list
-- **Audio options** - Change the audio track/language during playback
-- **Subtitles** - Turn subtitles on/off when available
-- **Full screen** - 1920x1080 video with no black borders
-- **Multi-format** - HLS, MP4, MKV, AVI and more than 20 formats
+- **Multiple M3U playlists** — Save and quickly switch between multiple playlist URLs
+- **Channel grid** — Browse channels organized by category with section headers
+- **Category jumping** — Use Fast Forward / Rewind to jump between categories instantly
+- **Preview** — Preview channels before launching in full screen
+- **Quick menu** — Press ← while watching to browse all channels without pausing video
+- **Channel surf** — Switch channels up/down while in fullscreen
+- **Mute toggle** — Press → to mute or unmute preview and fullscreen audio; mute icon appears on screen
+- **Audio options** — Change the audio track or language during playback
+- **Subtitles** — Turn subtitles on/off when available
+- **Full screen** — 1920×1080 video without letterboxing
+- **Multi-format** — HLS, MP4, MKV, AVI and more than 20 formats supported
+- **Smart buffering** — Loading progress bar shown during buffering in both grid and fullscreen; automatic retry with lower bitrate if stream stalls
+- **Error reporting** — Friendly error messages with channel name and description of the problem
+- **Clock** — Current time displayed alongside channel info
 
-
-## 📥 Tnstallation
+## 📥 Installation
 
 https://developer.roku.com/dev/docs/developer-setup
 
 ## 🎮 Controls
 
-### Main menu
+### Playlist menu
 
-| Button           | Action                                             |
-| ---------------- | -------------------------------------------------- |
-| **←→**           | Switch between playlist menu and channel list      |
-| **↑↓**           | Browse playlists or channels                       |
-| **OK**           | Play selected channel                              |
-| **Options (\*)** | Add new M3U playlist                               |
-| **Replay**       | Reload current channel                             |
+| Button             | Action                                              |
+| ------------------ | --------------------------------------------------- |
+| **↑↓**             | Browse playlists                                    |
+| **→**              | Switch to channel grid                              |
+| **OK**             | Select playlist                                     |
 
-> **Preview:** When browsing the channels, you'll see a thumbnail preview on the right. Use → to toggle mute.
-### During  fullscreen playback
+### Channel menu
 
-| Button               | Action                                                  |
-| -------------------- | ------------------------------------------------------- |
-| **OK**               | Open options menu (audio, subtitles, info)              |
-| **Play/Pause**       | Pause or resume video                                   |
-| **Instant Replay**   | Reload the current channel (useful if video was paused) |
-| **←**                | Show/hide the quick menu (video continues playing)      |
-| **↑ / Rewind**       | Channel surf to previous channel in playlist            |
-| **↓ / Fast Forward** | Channel surf to next channel in playlist                |
-| **Back**             | Return to main menu                                     |
+| Button              | Action                                              |
+| ------------------- | --------------------------------------------------- |
+| **↑↓**              | Browse channels                                     |
+| **←**               | Switch to playlist menu                             |
+| **→**               | Mute / unmute preview audio                         |
+| **OK** (once)       | Load selected channel in preview window             |
+| **OK** (twice)      | Go fullscreen with the previewing channel           |
+| **⏪ Rewind**       | Jump to previous category                           |
+| **⏩ Fast Forward** | Jump to next category                               |
+| **Instant Replay**  | Reload current preview channel                      |
 
-### Options menu (press OK while playing)
+> **Tip:** Channels with multiple categories will appear in each of their categories.
 
-- 🔊 **Change Audio** - Select the audio track/language
-- 💬 **Subtitles** - Turn subtitles on or off
-- ℹ️ **Channel Info** - Displays information about the current channel
-- ❌ **Close** - Closes the options menu
-> **Tip:** The channels are cyclical - the last one connects to the first one
+### Fullscreen playback
 
-> **Tip:** Tip: If the video freezes or pauses, press **Instant Replay** (⏪) to reload the channel.
+| Button              | Action                                              |
+| ------------------- | --------------------------------------------------- |
+| **OK**              | Open options menu (audio, subtitles, info)          |
+| **Play/Pause**      | Pause or resume video                               |
+| **↑**               | Channel surf to previous channel                    |
+| **↓**               | Channel surf to next channel                        |
+| **⏪ Rewind**       | Jump to previous category                           |
+| **⏩ Fast Forward** | Jump to next category                               |
+| **←**               | Show quick menu (video continues playing)           |
+| **→**               | Mute / unmute audio                                 |
+| **Instant Replay**  | Reload the current channel                          |
+| **Back**            | Return to grid (video continues in preview)         |
 
-## 📺 Personal playlists
+> **Tip:** Channels are cyclical — the last one connects back to the first.
 
-Use your own M3U playlist or your IPTV provider's URL. Supported formats:
+> **Tip:** If the video freezes, press **Instant Replay** to reload the channel.
 
-- URLs (HTTP/HTTPS)
+### Quick menu (press ← while in fullscreen)
+
+| Button              | Action                                              |
+| ------------------- | --------------------------------------------------- |
+| **↑↓**              | Browse channels                                     |
+| **⏪ Rewind**       | Jump to previous category                           |
+| **⏩ Fast Forward** | Jump to next category                               |
+| **OK**              | Switch to selected channel                          |
+| **← or →**          | Close quick menu                                    |
+
+### Options menu (press OK while in fullscreen)
+
+- 🔊 **Change Audio** — Select the audio track or language
+- 💬 **Subtitles** — Turn subtitles on or off
+- ℹ️ **Channel Info** — Display information about the current channel
+- ❌ **Close** — Close the options menu
+
+## 📺 Playlists
+
+Use your own M3U playlist or your IPTV provider's URL.
+
+**Supported formats:**
+- HTTP/HTTPS URLs
 - M3U format with EXTINF labels
-- Channel groups (group-title)
+- Channel groups via `group-title` (semicolon-separated for multiple categories)
 
-### Predefined lists
-
-The app includes lists of free channels for:
+### Included free channel lists
 
 - 🇺🇸 United States
 - 🇨🇦 Canada
@@ -73,53 +102,48 @@ The app includes lists of free channels for:
 - 🇯🇵 Japan
 - 🇰🇷 Korea
 
-### Add custom list
-1. Select "➕ Add List" in the playlists menu
+### Add a custom playlist
+1. Select **➕ Add List** in the playlist menu
 2. Enter a name for your list
-3. Enter the URL of your M3U playlist (must include http: or https:)
-4. Done! Your list will now appear in the menu
+3. Enter the URL of your M3U playlist (must start with http:// or https://)
+4. Your list will appear in the menu immediately
 
-**Playlist recommendations:**
-
-- [M3U.cl](https://m3u.cl/) - Listings by country
-- [IPTV-ORG](https://github.com/iptv-org/iptv) - Global colletction
+**Playlist resources:**
+- [M3U.cl](https://m3u.cl/) — Listings by country
+- [IPTV-ORG](https://github.com/iptv-org/iptv) — Global collection
 
 ## 🔧 Troubleshooting
 
 **The app closes on startup:**
-
 - Check your internet connection
-- Try a smaller playlist first.
+- Try a smaller playlist first
 
 **The playlist is not loading:**
-
-- Verify that the URL is accessible from a browser
-- Make sure the format is a valid M3U
+- Verify the URL is accessible from a browser
+- Make sure the format is valid M3U
 - Try the default demo playlist
 
 **No audio tracks appear:**
-
 - Wait a few seconds after the channel starts playing
 - Not all channels have multiple audio tracks
-- Press OK to see the available options
+- Press OK to see available options
 
-**The channel is showing an error:**
+**A channel shows an error:**
+- Channels go on and offline; some may be temporarily unavailable
+- The app will automatically retry with a lower bitrate before showing an error
+- Use ↑↓ to switch to another channel
 
-- Channels gon on and offline, some channels may be temporarily unavailable.
-- Use ↑↓ to switch to another channel without closing anything
-
-**Debug:**
-
+**Debug (telnet log):**
 ```bash
-telnet TU_IP_ROKU 8085
+telnet YOUR_ROKU_IP 8085
 ```
 
 ## 📋 Version
 
-- **Current version:** Still in alpha stage
-- **Last updated:** June 13, 2026
+- **Current version:** 1.0
+- **Last updated:** Jun 15, 2026
 
-## 📄 Legal documentation
+## 📄 Legal
 
 - [Privacy Policy](PRIVACY_POLICY.md)
 - [Terms of Service](TERMS_OF_SERVICE.md)
