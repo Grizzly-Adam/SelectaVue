@@ -32,6 +32,7 @@ https://developer.roku.com/dev/docs/developer-setup
 | **↑↓**             | Browse playlists                                    |
 | **→**              | Switch to channel grid                              |
 | **OK**             | Select playlist                                     |
+| ** `*` **            | Edit playlist                                       |
 
 ### Channel menu
 

@@ -60,7 +60,7 @@
 
     <Rectangle
         id="muteHintContainer"
-        translation="[1430, 460]"
+        translation="[1450, 460]"
         width="400"
         height="50"
         color="0x222222DD"

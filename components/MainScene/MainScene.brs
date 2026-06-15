@@ -56,7 +56,7 @@ sub init()
     m.errorVisible = false
     m.bufferVisible = false
     m.playlistPanelActive = true
-    m.bitrateRetryDone = false
+    m.playlistFocusIndex = 0
     m.stallRetryCount = 0
     m.lastBufferPct = -1
     m.stallTimer = invalid
@@ -260,17 +260,21 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
             end if
         else
             if(key = "up")
-                newIndex = m.currentChannelIndex - 1
-                if newIndex < 0 then newIndex = m.flatChannelList.Count() - 1
-                m.currentChannelIndex = newIndex
-                m.channelList.jumpToItem = newIndex
-                result = true
+                if not m.playlistPanelActive then
+                    newIndex = m.currentChannelIndex - 1
+                    if newIndex < 0 then newIndex = m.flatChannelList.Count() - 1
+                    m.currentChannelIndex = newIndex
+                    m.channelList.jumpToItem = newIndex
+                    result = true
+                end if
             else if(key = "down")
-                newIndex = m.currentChannelIndex + 1
-                if newIndex >= m.flatChannelList.Count() then newIndex = 0
-                m.currentChannelIndex = newIndex
-                m.channelList.jumpToItem = newIndex
-                result = true
+                if not m.playlistPanelActive then
+                    newIndex = m.currentChannelIndex + 1
+                    if newIndex >= m.flatChannelList.Count() then newIndex = 0
+                    m.currentChannelIndex = newIndex
+                    m.channelList.jumpToItem = newIndex
+                    result = true
+                end if
             else if(key = "right")
                 if m.playlistPanelActive then
                     m.playlistPanelActive = false
@@ -289,8 +293,18 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
                 m.playlistPanelActive = true
                 m.playlistList.SetFocus(true)
                 result = true
+            else if(key = "options")
+                if m.playlistPanelActive then
+                    m.playlistFocusIndex = m.playlistList.itemFocused
+                    showPlaylistOptions()
+                    result = true
+                end if
             else if(key = "replay")
-                reloadCurrentChannel()
+                if m.playlistPanelActive then
+                    reloadCurrentPlaylist()
+                else
+                    reloadCurrentChannel()
+                end if
                 result = true
             else if(key = "rewind")
                 jumpToGroup(-1)
@@ -299,20 +313,21 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
                 jumpToGroup(1)
                 result = true
             else if(key = "OK")
-                channel = m.flatChannelList[m.currentChannelIndex]
-                if channel <> invalid then
-                    ' Single OK = load preview, double OK = fullscreen
-                    if m.previewVideo.content <> invalid and m.previewVideo.content.url = channel.url then
-                        print ">>> GRID: Double OK - going fullscreen"
-                        m.suppressNextVideoOptionsMenu = true
-                        startOverlayOkSuppressionTimer()
-                        playChannel(channel)
-                    else
-                        print ">>> GRID: Single OK - loading preview"
-                        playPreviewChannel(m.currentChannelIndex)
+                if not m.playlistPanelActive then
+                    channel = m.flatChannelList[m.currentChannelIndex]
+                    if channel <> invalid then
+                        if m.previewVideo.content <> invalid and m.previewVideo.content.url = channel.url then
+                            print ">>> GRID: Double OK - going fullscreen"
+                            m.suppressNextVideoOptionsMenu = true
+                            startOverlayOkSuppressionTimer()
+                            playChannel(channel)
+                        else
+                            print ">>> GRID: Single OK - loading preview"
+                            playPreviewChannel(m.currentChannelIndex)
+                        end if
                     end if
+                    result = true
                 end if
-                result = true
             end if
         end if
     end if
@@ -405,7 +420,10 @@ sub setupPlaylistMenu()
     item.title = "+ Add new playlist"
     
     m.playlistList.content = content
-    m.playlistList.SetFocus(true)
+    m.playlistFocusIndex = m.currentPlaylist
+    m.playlistList.jumpToItem = m.playlistFocusIndex
+    m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
 end sub
 
 sub onPlaylistSelected()
@@ -424,7 +442,7 @@ sub onPlaylistSelected()
 end sub
 
 sub showPlaylistOptions()
-    selectedIdx = m.playlistList.itemSelected
+    selectedIdx = m.playlistList.itemFocused
     
     if selectedIdx < 0 or selectedIdx >= m.playlists.Count() then
         return
@@ -443,10 +461,10 @@ sub showPlaylistOptions()
     end if
     
     dialog = CreateObject("roSGNode", "Dialog")
-    dialog.title = "Opciones: " + selectedPlaylist.name
+    dialog.title = "Options: " + selectedPlaylist.name
     dialog.buttons = ["Edit Name", "Edit URL", "Delete", "Cancel"]
     m.top.dialog = dialog
-    m.selectedPlaylistIndex = selectedIdx
+    m.selectedPlaylistIndex = m.playlistList.itemFocused
     
     m.top.dialog.observeField("buttonSelected", "onPlaylistOptionSelected")
 end sub
@@ -455,6 +473,7 @@ sub onDefaultPlaylistDialogClosed()
     m.top.dialog.unobserveField("buttonSelected")
     m.top.dialog.close = true
     m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
 end sub
 
 sub onPlaylistOptionSelected()
@@ -484,6 +503,7 @@ sub onPlaylistOptionSelected()
         m.optionTimer.control = "start"
     else
         m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
     end if
 end sub
 
@@ -542,6 +562,7 @@ sub onEditNameComplete()
     end if
     
     m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
 end sub
 
 sub editPlaylistUrl()
@@ -605,6 +626,7 @@ sub onEditUrlComplete()
         m.top.dialog.unobserveField("buttonSelected")
         m.top.dialog.close = true
         m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
     end if
 end sub
 
@@ -629,6 +651,7 @@ sub onEditUrlErrorClosed()
     m.top.dialog.unobserveField("buttonSelected")
     m.top.dialog.close = true
     m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
 end sub
 
 sub confirmDeletePlaylist()
@@ -689,6 +712,7 @@ sub onDeleteConfirmed()
     end if
     
     m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
 end sub
 
 sub showPlaylistManager()
@@ -710,7 +734,7 @@ sub showPlaylistManager()
     
     keyboardDialog = createObject("roSGNode", "StandardKeyboardDialog")
     keyboardDialog.backgroundUri = ""
-    keyboardDialog.title = "NEW PLAYLIST - STEP 1/2"
+    keyboardDialog.title = "NEW PLAYLIST - STEP 1/2: Enter name (ex: My list)"
     keyboardDialog.message = "Enter name (ex: My list)"
     keyboardDialog.buttons = ["Next", "Cancel"]
     keyboardDialog.text = ""
@@ -755,6 +779,7 @@ sub onPlaylistNameEntered()
         
         ' Restore focus to the list
         m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
     end if
 end sub
 
@@ -771,15 +796,15 @@ sub showUrlDialog()
     if m.tempPlaylistName = invalid then
         print ">>> URL DIALOG ERROR: No name saved"
         m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
         return
     end if
     
     urlDialog = createObject("roSGNode", "StandardKeyboardDialog")
     urlDialog.backgroundUri = ""
-    urlDialog.title = "NEW PLAYLIST - PART 2/2"
-    urlDialog.message = "URL of the M3U playlist (ex: https://example.com/list.m3u)"
+    urlDialog.title = "NEW PLAYLIST - PART 2/2: ENTER URL (http://...)"
     urlDialog.buttons = ["Add", "Cancel"]
-    urlDialog.text = ""
+    urlDialog.text = "https://"
     
     m.top.dialog = urlDialog
     m.top.dialog.observeField("buttonSelected", "onPlaylistUrlEntered")
@@ -823,6 +848,7 @@ sub onPlaylistUrlEntered()
         
         m.tempPlaylistName = invalid
         m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
     else
         ' Cancel button pressed
         print ">>> PLAYLIST URL: Canceled"
@@ -830,6 +856,7 @@ sub onPlaylistUrlEntered()
         m.top.dialog.close = true
         m.tempPlaylistName = invalid
         m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
     end if
 end sub
 
@@ -873,6 +900,7 @@ sub onErrorDialogClosed()
     m.top.dialog.unobserveField("buttonSelected")
     m.top.dialog.close = true
     m.playlistList.setFocus(true)
+    m.playlistPanelActive = true
 end sub
 
 sub checkState()
@@ -2024,6 +2052,14 @@ sub findChannelIndexByUrl(url as String)
     
     print ">>> FINDINDEX: No channel found, falling back to index 0"
     m.currentChannelIndex = 0
+end sub
+
+sub reloadCurrentPlaylist()
+    if m.playlists = invalid or m.playlists.Count() = 0 then return
+    idx = m.playlistList.itemFocused
+    if idx >= 0 and idx < m.playlists.Count() then
+        loadPlaylist(m.playlists[idx].url)
+    end if
 end sub
 
 sub reloadCurrentChannel()
