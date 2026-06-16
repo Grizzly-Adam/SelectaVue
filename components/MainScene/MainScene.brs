@@ -64,6 +64,7 @@ sub init()
     m.pendingGroupJumpIndex = -1
     m.groupJumpTimer = invalid
     m.pendingGroupJumpTarget = ""
+    m.muteIndicatorTimer = invalid
     m.previewHintLabel = m.top.FindNode("previewHintLabel")
     m.muteIndicatorContainer = m.top.FindNode("muteIndicatorContainer")
     m.muteIndicatorImage = m.top.FindNode("muteIndicatorImage")
@@ -804,7 +805,7 @@ sub showUrlDialog()
     urlDialog.backgroundUri = ""
     urlDialog.title = "NEW PLAYLIST - PART 2/2: ENTER URL (http://...)"
     urlDialog.buttons = ["Add", "Cancel"]
-    urlDialog.text = "https://"
+    urlDialog.text = ""
     
     m.top.dialog = urlDialog
     m.top.dialog.observeField("buttonSelected", "onPlaylistUrlEntered")
@@ -1668,15 +1669,16 @@ sub showMuteIndicator()
 
     m.muteIndicatorContainer.visible = true
 
-    if m.channelInfoTimer <> invalid then
-        m.channelInfoTimer.control = "stop"
+    if m.muteIndicatorTimer <> invalid then
+        m.muteIndicatorTimer.control = "stop"
+        m.muteIndicatorTimer.unobserveField("fire")
     end if
 
-    m.channelInfoTimer = CreateObject("roSGNode", "Timer")
-    m.channelInfoTimer.duration = 2
-    m.channelInfoTimer.repeat = false
-    m.channelInfoTimer.ObserveField("fire", "hideMuteIndicator")
-    m.channelInfoTimer.control = "start"
+    m.muteIndicatorTimer = CreateObject("roSGNode", "Timer")
+    m.muteIndicatorTimer.duration = 2
+    m.muteIndicatorTimer.repeat = false
+    m.muteIndicatorTimer.ObserveField("fire", "hideMuteIndicator")
+    m.muteIndicatorTimer.control = "start"
 end sub
 
 sub hideMuteIndicator()
