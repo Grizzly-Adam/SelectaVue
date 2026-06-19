@@ -142,7 +142,7 @@ telnet YOUR_ROKU_IP 8085
 ## 📋 Version
 
 - **Current version:** 1.1.2
-- **Last updated:** Jun 15, 2026
+- **Last updated:** Jun 19, 2026
 
 ## 📄 Legal
 
