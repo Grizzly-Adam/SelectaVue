@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<component name="MainScene" extends="Scene" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://rokudev.roku.com/rokudev/schema/RokuSceneGraph.xsd" initialFocus="playlistList">
+<component name="MainScene" extends="Scene" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://rokudev.roku.com/rokudev/schema/RokuSceneGraph.xsd" initialFocus="channelList">
 <script type="text/brightscript" uri="pkg:/components/MainScene/MainScene.brs"/>
 <children>
     <Rectangle
@@ -24,7 +24,7 @@
             itemSize="[290, 60]"
             numRows="11"
             itemSpacing="[0, 10]"
-            color="0x555555DD"/>
+            color="0x111111DD"/>
     </Rectangle>
     
     <LabelList
@@ -33,14 +33,13 @@
     	itemSize="[830, 50]"
     	numRows="16"
     	itemSpacing="[0, 5]"
-        color="0xCCCCCCDD"
-        sectionDividerHeight="40"
+        color="0xDDDDDDFF"
+        focusedColor="0x111111FF"
         sectionDividerFont="font:SmallBoldSystemFont"
         sectionDividerTextColor="0x8fcdc0FF"
-        sectionDividerTopPadding="10"
     	visible="true"/>
     
-    <!-- Video preview in the menu -->
+    <!-- Video preview in the grid -->
     <Video
         id="PreviewVideo"
         translation="[1380, 145]"
@@ -58,12 +57,57 @@
         visible="true">    
     </Rectangle>
 
+    <!-- Preview error overlay -->
+    <Rectangle
+        id="previewErrorContainer"
+        translation="[1410, 210]"
+        width="384"
+        height="100"
+        color="0x000000BB"
+        visible="false">
+        <Label
+            translation="[0, 12]"
+            text="Channel"
+            font="font:MediumBoldSystemFont"
+            color="0xFF4444FF"
+            width="384"
+            horizAlign="center"/>
+        <Label
+            translation="[0, 55]"
+            text="Unavailable"
+            font="font:MediumBoldSystemFont"
+            color="0xFF4444FF"
+            width="384"
+            horizAlign="center"/>
+    </Rectangle>
+
+    <!-- Channel name under preview -->
+    <Rectangle
+        id="previewChannelNameContainer"
+        translation="[1420, 455]"
+        width="444"
+        height="58"
+        color="0x222222FF"
+        visible="false">
+        <Label
+            id="previewChannelNameLabel"
+            translation="[10, 10]"
+            text=""
+            font="font:SmallSystemFont"
+            color="0xFFFFFFFF"
+            width="424"
+            height="38"
+            wrap="true"
+            maxLines="2"
+            horizAlign="center"/>
+    </Rectangle>
+
     <Rectangle
         id="muteHintContainer"
-        translation="[1450, 460]"
-        width="400"
+        translation="[1420, 510]"
+        width="444"
         height="50"
-        color="0x222222DD"
+        color="0x222222FF"
         visible="true">    
         <Label
             id="previewHintLabel"
@@ -217,14 +261,16 @@
         translation="[0, 0]"
         width="550"
         height="1080"
-        color="0x024c48CC"
+        color="0x024c48DE"
         visible="false">
-        
+
         <LabelList
             id="channelOverlayList"
             translation="[50, 30]"
             itemSize="[460, 50]"
             numRows="18"
+            color="0xFFFFFFFF"
+            focusedColor="0x111111FF"
             itemSpacing="[0, 5]"/>
     </Rectangle>
     
@@ -247,6 +293,49 @@
     	    font="font:LargeBoldSystemFont"/>
     </Rectangle>
     
+    <!-- Fullscreen failure text - persists after error dismissed -->
+    <Rectangle
+        id="fullscreenFailContainer"
+        translation="[360, 390]"
+        width="1200"
+        height="300"
+        color="0x000000CC"
+        visible="false">
+        <Label
+            id="fullscreenFailTitle"
+            translation="[30, 25]"
+            text="Channel Unavailable"
+            font="font:LargeBoldSystemFont"
+            color="0xFF4444FF"
+            width="1140"/>
+        <Label
+            id="fullscreenFailChannel"
+            translation="[30, 95]"
+            text=""
+            font="font:MediumBoldSystemFont"
+            color="0xFFFFFFFF"
+            width="1140"/>
+        <Label
+            id="fullscreenFailLabel"
+            translation="[30, 145]"
+            text=""
+            font="font:SmallSystemFont"
+            color="0xCCCCCCFF"
+            width="1140"
+            height="130"
+            wrap="true"
+            maxLines="4"/>
+    </Rectangle>
+
+    <!-- Screensaver overlay for inactivity -->
+    <Rectangle
+        id="screensaverOverlay"
+        translation="[0, 0]"
+        width="1920"
+        height="1080"
+        color="0x000000CC"
+        visible="false"/>
+
     <!-- Invisible focus trap used when error overlay is showing -->
     <Rectangle
         id="focusTrap"
@@ -254,7 +343,7 @@
         width="1"
         height="1"
         color="0x00000000"
-        visible="false"
+        visible="true"
         focusable="true"/>
 
     <get_channel_list

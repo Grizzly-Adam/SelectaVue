@@ -43,8 +43,8 @@ https://developer.roku.com/dev/docs/developer-setup
 | **→**               | Mute / unmute preview audio                         |
 | **OK** (once)       | Load selected channel in preview window             |
 | **OK** (twice)      | Go fullscreen with the previewing channel           |
-| **⏪ Rewind**       | Jump to previous category                           |
-| **⏩ Fast Forward** | Jump to next category                               |
+| **⏪ Rewind**       | Page up                                             |
+| **⏩ Fast Forward** | Page down                                           |
 | **Instant Replay**  | Reload current preview channel                      |
 
 > **Tip:** Channels with multiple categories will appear in each of their categories.
@@ -57,8 +57,8 @@ https://developer.roku.com/dev/docs/developer-setup
 | **Play/Pause**      | Pause or resume video                               |
 | **↑**               | Channel surf to previous channel                    |
 | **↓**               | Channel surf to next channel                        |
-| **⏪ Rewind**       | Jump to previous category                           |
-| **⏩ Fast Forward** | Jump to next category                               |
+| **⏪ Rewind**       | Page up                                             |
+| **⏩ Fast Forward** | Page down                                           |
 | **←**               | Show quick menu (video continues playing)           |
 | **→**               | Mute / unmute audio                                 |
 | **Instant Replay**  | Reload the current channel                          |
@@ -73,8 +73,8 @@ https://developer.roku.com/dev/docs/developer-setup
 | Button              | Action                                              |
 | ------------------- | --------------------------------------------------- |
 | **↑↓**              | Browse channels                                     |
-| **⏪ Rewind**       | Jump to previous category                           |
-| **⏩ Fast Forward** | Jump to next category                               |
+| **⏪ Rewind**       | Page up                                             |
+| **⏩ Fast Forward** | Page down                                           |
 | **OK**              | Switch to selected channel                          |
 | **← or →**          | Close quick menu                                    |
 
@@ -141,7 +141,7 @@ telnet YOUR_ROKU_IP 8085
 
 ## 📋 Version
 
-- **Current version:** 1.0
+- **Current version:** 1.1.2
 - **Last updated:** Jun 15, 2026
 
 ## 📄 Legal
