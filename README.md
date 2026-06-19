@@ -110,7 +110,6 @@ Use your own M3U playlist or your IPTV provider's URL.
 4. Your list will appear in the menu immediately
 
 **Playlist resources:**
-- [M3U.cl](https://m3u.cl/) — Listings by country
 - [IPTV-ORG](https://github.com/iptv-org/iptv) — Global collection
 
 ## 🔧 Troubleshooting
@@ -141,7 +140,7 @@ telnet YOUR_ROKU_IP 8085
 
 ## 📋 Version
 
-- **Current version:** 1.1.2
+- **Current version:** 1.1.3
 - **Last updated:** Jun 19, 2026
 
 ## 📄 Legal

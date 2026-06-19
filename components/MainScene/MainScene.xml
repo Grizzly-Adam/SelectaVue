@@ -1,7 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <component name="MainScene" extends="Scene" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://rokudev.roku.com/rokudev/schema/RokuSceneGraph.xsd" initialFocus="channelList">
+<!-- Core scene init, SetContent, loadPlaylist -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/MainScene.brs"/>
+<!-- Pure helper functions: isValidUrl, getFriendlyError, getLanguageName, toStr -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/Utils.brs"/>
+<!-- Persist and restore last playlist + channel across launches -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/StateManager.brs"/>
+<!-- Playlist CRUD (built-in + user), side-panel menu, add/edit/delete dialogs -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/PlaylistManager.brs"/>
+<!-- Play, preview, reload, channel navigation, audio/subtitle menus -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/VideoPlayback.brs"/>
+<!-- All visual overlays: errors, mute indicator, buffer bar, channel info, clock -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/Overlays.brs"/>
+<!-- Inactivity timers (grid, fullscreen, overlay, options) and stall-retry logic -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/Timers.brs"/>
+<!-- onKeyEvent - routes key presses to the appropriate module -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/InputHandler.brs"/>
 <children>
     <Rectangle
         id="sidePanel"
