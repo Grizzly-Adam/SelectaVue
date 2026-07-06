@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component name="LocalProxy" extends="Task">
+    <interface>
+        <!-- Set these before starting -->
+        <field id="masterUrl"  type="string" value=""/>
+        <field id="userAgent"  type="string" value=""/>
+        <field id="referrer"   type="string" value=""/>
+        <field id="cookie"     type="string" value=""/>
+        <!-- Set stopProxy=true to signal the running thread to exit -->
+        <field id="stopProxy"  type="boolean" value="false"/>
+        <!-- Proxy reports back its local URL once running -->
+        <field id="proxyUrl"   type="string" value=""/>
+        <field id="status"     type="string" value="idle"/>
+    </interface>
+    <script type="text/brightscript" uri="pkg:/components/LocalProxy/LocalProxy.brs"/>
+</component>

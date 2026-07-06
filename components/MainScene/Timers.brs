@@ -1,52 +1,106 @@
 ' ==================== Timers.brs ====================
-' All inactivity timers and the buffer-stall retry loop.
+' UI inactivity timers: auto-fullscreen/screensaver on the grid, the
+' fullscreen screensaver shade, quick-menu auto-dismiss, and the video
+' options dialog auto-close.
 '
-' Timers managed here:
+' Timers managed in this file:
 '   gridInactivityTimer       - auto-fullscreen or screensaver after 45s on grid
 '   fullscreenInactivityTimer - screensaver shade after 45s fullscreen with error
-'   overlayInactivityTimer    - auto-dismiss quick-menu overlay after 10s
+'   overlayInactivityTimer    - auto-dismiss quick-menu after 30s
 '   optionsDialogTimer        - auto-close video options dialog after 30s
-'   stallTimer                - detect stuck buffer and retry with lower bitrate
+'
+' See also: PlaybackHealthTimers.brs (stall/error-delay/network/stream-retry/
+' countdown/OK-suppression), SessionRefreshTimer.brs (session-token refresh),
+' and SettingsCache.brs (settingsCacheTimer, a 2min promotion delay — managed
+' entirely in that file, not here).
+
+' ---------- Loading dialog: active-input dismissal (grid only) ----------
+' Called from onKeyEvent (OK/back/up/down/left) and from the itemSelected/
+' itemFocused observers (OK/up/down are natively consumed by a focused
+' LabelList before they'd ever reach onKeyEvent). Just hides the overlay —
+' m.loadingDialogVisible stays true since the fetch task is still running;
+' SetContent() clears it properly once the load actually finishes.
+sub _dismissLoadingDialogForInput()
+    if m.loadingOverlay       <> invalid then m.loadingOverlay.visible       = false
+    if m.loadingOverlayBorder <> invalid then m.loadingOverlayBorder.visible = false
+    if m.screensaverOverlay <> invalid and (m.reconnectOverlay = invalid or not m.reconnectOverlay.visible) then
+        m.screensaverOverlay.visible = false
+    end if
+end sub
+
+' ---------- Screensaver / dim-shader dismissal ----------
+' Shared by onKeyEvent AND by the itemFocused/itemSelected observers below.
+' Necessary because focused LabelLists (channelList, playlistList,
+' channelOverlayList) consume up/down/OK internally via their own native
+' key handling and never let those reach Scene.onKeyEvent — so dismissing
+' the shader can't live in onKeyEvent alone, or an OK press meant to "just
+' clear the dim" would instead fall straight through to onChannelSelected /
+' onPlaylistSelected and act on whatever happened to be focused underneath.
+' Returns true if the shader was up and this call handled it (caller should
+' stop and not process the key/event any further).
+function _dismissScreensaverIfVisible() as Boolean
+    if m.screensaverOverlay = invalid or not m.screensaverOverlay.visible then return false
+    ' The reconnect dialog owns the shade for as long as it's up, in any
+    ' state — cancelling/dismissing it goes through hideReconnectingOverlay
+    ' (which explicitly turns the shade off itself), not this generic path.
+    if m.reconnectOverlay <> invalid and m.reconnectOverlay.visible then return false
+    m.screensaverOverlay.visible = false
+    if m.loadingDialogVisible then
+        _showLoadingDialog()   ' restore the modal loading dialog — the fetch task never stopped
+    end if
+    if m.isPlayingVideo then
+        resetFullscreenInactivityTimer()
+    else
+        resetGridInactivityTimer()
+    end if
+    return true
+end function
 
 ' ---------- Grid inactivity ----------
 
 sub resetGridInactivityTimer()
     if m.isPlayingVideo then return
-    if m.gridInactivityTimer <> invalid then
-        m.gridInactivityTimer.control = "stop"
-        m.gridInactivityTimer.unobserveField("fire")
+    if m.screensaverOverlay <> invalid and (m.reconnectOverlay = invalid or not m.reconnectOverlay.visible) then
+        m.screensaverOverlay.visible = false
     end if
-    if m.screensaverOverlay <> invalid then m.screensaverOverlay.visible = false
-    m.gridInactivityTimer = CreateObject("roSGNode", "Timer")
-    m.gridInactivityTimer.duration = 45.0
-    m.gridInactivityTimer.repeat   = false
-    m.gridInactivityTimer.ObserveField("fire", "onGridInactivity")
-    m.gridInactivityTimer.control  = "start"
+    _startNamedTimer("gridInactivityTimer", 45.0, false, "onGridInactivity")
 end sub
 
 sub onGridInactivity()
     m.gridInactivityTimer = invalid
-    if m.errorVisible then
-        if m.screensaverOverlay <> invalid then m.screensaverOverlay.visible = true
-        return
-    end if
     if m.isPlayingVideo then return
-
+    ' Loading overlay still up (not manually dismissed) — it already dims
+    ' via screensaverOverlay the whole time it's shown, so there's nothing
+    ' to do here except not auto-transition to fullscreen underneath it. If
+    ' the user already dismissed it, fall through to normal inactivity
+    ' handling below like any other idle grid moment.
+    if m.loadingDialogVisible and m.loadingOverlay <> invalid and m.loadingOverlay.visible then return
     if m.previewVideo.state = "playing" then
-        ' Resize preview to fullscreen without reloading the stream
-        m.top.backgroundURI = ""
-        m.top.backgroundColor = "0x024c48FF"
-        m.previewVideo.trickplaybarvisibilityauto = false
-        m.previewVideo.translation = [0, 0]
-        m.previewVideo.width       = 1920
-        m.previewVideo.height      = 1080
-        m.channelList.visible      = false
-        m.sidePanel.visible        = false
+        m.top.backgroundURI   = ""
+        m.top.backgroundColor = APP_BACKGROUND_TEAL()
+        m.previewVideo.visible = true
+        _setFullscreenGeometry()
+        m.channelList.visible = false
+        if m.channelListHeaderLabel <> invalid then m.channelListHeaderLabel.visible = false
+        if m.gridBackgroundTexture <> invalid then m.gridBackgroundTexture.visible = false
+        m.sidePanel.visible   = false
         hideGridOverlays()
         m.isPlayingVideo = true
+        m.loadingChannelIndex = m.currentChannelIndex   ' explicit — same channel, no ambiguity
         m.suppressNextVideoOptionsMenu = true
         startOverlayOkSuppressionTimer()
+        ' Explicitly defocus grid/list nodes before taking scene focus —
+        ' same as playChannel() / _goFullscreenFromGrid() — or m.channelList
+        ' (which almost certainly has focus right now) could keep consuming
+        ' Up/Down instead of letting them reach changeChannel() in fullscreen.
+        m.channelList.setFocus(false)
+        m.playlistList.setFocus(false)
+        m.channelOverlayList.setFocus(false)
         m.top.setFocus(true)
+        if m.currentChannelIndex >= 0 and m.flatChannelList <> invalid and m.currentChannelIndex < m.flatChannelList.Count() then
+            channel = m.flatChannelList[m.currentChannelIndex]
+            if channel <> invalid then showChannelBar(channel)
+        end if
         saveLastState()
     else
         if m.screensaverOverlay <> invalid then m.screensaverOverlay.visible = true
@@ -56,39 +110,24 @@ end sub
 ' ---------- Fullscreen inactivity ----------
 
 sub resetFullscreenInactivityTimer()
-    if m.fullscreenInactivityTimer <> invalid then
-        m.fullscreenInactivityTimer.control = "stop"
-        m.fullscreenInactivityTimer.unobserveField("fire")
+    if m.screensaverOverlay <> invalid and (m.reconnectOverlay = invalid or not m.reconnectOverlay.visible) then
+        m.screensaverOverlay.visible = false
     end if
-    if m.screensaverOverlay <> invalid then m.screensaverOverlay.visible = false
-    m.fullscreenInactivityTimer = CreateObject("roSGNode", "Timer")
-    m.fullscreenInactivityTimer.duration = 45.0
-    m.fullscreenInactivityTimer.repeat   = false
-    m.fullscreenInactivityTimer.ObserveField("fire", "onFullscreenInactivity")
-    m.fullscreenInactivityTimer.control  = "start"
+    _startNamedTimer("fullscreenInactivityTimer", 45.0, false, "onFullscreenInactivity")
 end sub
 
 sub onFullscreenInactivity()
     m.fullscreenInactivityTimer = invalid
     if m.screensaverOverlay = invalid then return
-    ' Only shade when the fullscreen error banner is visible
-    if m.fullscreenFailContainer <> invalid and m.fullscreenFailContainer.visible then
+    if m.reconnectOverlay <> invalid and m.reconnectOverlay.visible then
         m.screensaverOverlay.visible = true
     end if
 end sub
 
-' ---------- Overlay (quick-menu) inactivity ----------
+' ---------- Overlay (quick-menu) inactivity — 30s ----------
 
 sub resetOverlayInactivityTimer()
-    if m.overlayInactivityTimer <> invalid then
-        m.overlayInactivityTimer.control = "stop"
-        m.overlayInactivityTimer.unobserveField("fire")
-    end if
-    m.overlayInactivityTimer = CreateObject("roSGNode", "Timer")
-    m.overlayInactivityTimer.duration = 10.0
-    m.overlayInactivityTimer.repeat   = false
-    m.overlayInactivityTimer.ObserveField("fire", "onOverlayInactivity")
-    m.overlayInactivityTimer.control  = "start"
+    _startNamedTimer("overlayInactivityTimer", 30.0, false, "onOverlayInactivity")
 end sub
 
 sub onOverlayInactivity()
@@ -105,89 +144,10 @@ end sub
 ' ---------- Options dialog auto-close ----------
 
 sub resetOptionsDialogTimer()
-    if m.optionsDialogTimer <> invalid then
-        m.optionsDialogTimer.control = "stop"
-        m.optionsDialogTimer.unobserveField("fire")
-    end if
-    m.optionsDialogTimer = CreateObject("roSGNode", "Timer")
-    m.optionsDialogTimer.duration = 30.0
-    m.optionsDialogTimer.repeat   = false
-    m.optionsDialogTimer.ObserveField("fire", "onOptionsDialogTimeout")
-    m.optionsDialogTimer.control  = "start"
+    _startNamedTimer("optionsDialogTimer", 30.0, false, "onOptionsDialogTimeout")
 end sub
 
 sub onOptionsDialogTimeout()
     m.optionsDialogTimer = invalid
     if m.top.dialog <> invalid then m.top.dialog.close = true
-end sub
-
-' ---------- Buffer stall detection & retry ----------
-
-sub cancelStallTimer()
-    if m.stallTimer <> invalid then
-        m.stallTimer.control = "stop"
-        m.stallTimer.unobserveField("fire")
-        m.stallTimer = invalid
-    end if
-end sub
-
-sub onBufferStall()
-    m.stallTimer = invalid
-    if m.previewVideo.state <> "buffering" then return
-
-    pct    = 0
-    status = m.previewVideo.bufferingStatus
-    if status <> invalid and status.percentage <> invalid then pct = status.percentage
-    if pct >= 100 then return
-
-    print ">>> STALL: Buffer stalled at "; pct; "%, retry count = "; m.stallRetryCount
-
-    content = m.previewVideo.content
-    if content = invalid then return
-
-    if m.stallRetryCount = 0 then
-        print ">>> STALL: Retrying with MaxBandwidth 2.5 Mbps"
-        m.previewVideo.maxBandwidth = 2500000
-        m.stallRetryCount = 1
-    else if m.stallRetryCount = 1 then
-        print ">>> STALL: Retrying with MaxBandwidth 1 Mbps"
-        m.previewVideo.maxBandwidth = 1000000
-        m.stallRetryCount = 2
-    else
-        print ">>> STALL: All retries exhausted, showing error"
-        hideBufferBar()
-        showChannelError("Stream stalled and could not recover. The channel may require more bandwidth than is available.")
-        if m.isPlayingVideo then resetFullscreenInactivityTimer() else resetGridInactivityTimer()
-        return
-    end if
-
-    ' Force reload with the new bandwidth cap
-    m.lastBufferPct         = -1
-    m.previewVideo.content  = invalid
-    m.previewVideo.content  = content
-    m.previewVideo.control  = "play"
-end sub
-
-' ---------- OK-suppression timer (prevents options menu after channel switch) ----------
-
-sub startOverlayOkSuppressionTimer()
-    if m.overlayOkSuppressTimer <> invalid then
-        m.overlayOkSuppressTimer.control = "stop"
-        m.overlayOkSuppressTimer.unobserveField("fire")
-        m.overlayOkSuppressTimer = invalid
-    end if
-    m.overlayOkSuppressTimer = CreateObject("roSGNode", "Timer")
-    m.overlayOkSuppressTimer.duration = 0.5
-    m.overlayOkSuppressTimer.repeat   = false
-    m.overlayOkSuppressTimer.observeField("fire", "clearOverlayOkSuppression")
-    m.overlayOkSuppressTimer.control  = "start"
-end sub
-
-sub clearOverlayOkSuppression()
-    if m.overlayOkSuppressTimer <> invalid then
-        m.overlayOkSuppressTimer.control = "stop"
-        m.overlayOkSuppressTimer.unobserveField("fire")
-        m.overlayOkSuppressTimer = invalid
-    end if
-    m.suppressNextVideoOptionsMenu = false
 end sub

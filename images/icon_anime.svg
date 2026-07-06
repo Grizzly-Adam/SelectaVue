@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <rect width="200" height="200" fill="#024c48"/>
+  <!-- Rising sun background semicircle -->
+  <path d="M20 140 Q20 60 100 60 Q180 60 180 140Z" fill="#E85D3A"/>
+  <!-- Sun rays (triangular) -->
+  <polygon points="100,60 88,20 112,20" fill="#E8B84B"/>
+  <polygon points="100,60 52,34 62,14" fill="#E8B84B"/>
+  <polygon points="100,60 148,34 138,14" fill="#E8B84B"/>
+  <polygon points="100,60 24,82 18,58" fill="#E8B84B"/>
+  <polygon points="100,60 176,82 182,58" fill="#E8B84B"/>
+  <!-- Sun circle -->
+  <circle cx="100" cy="128" r="42" fill="#E8B84B"/>
+  <circle cx="100" cy="128" r="24" fill="#E85D3A"/>
+  <!-- Horizon line -->
+  <rect x="12" y="138" width="176" height="8" fill="#8fcdc1"/>
+</svg>

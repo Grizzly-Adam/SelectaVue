@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <rect width="200" height="200" fill="#024c48"/>
+  <!-- Comedy mask (happy) -->
+  <circle cx="68" cy="95" r="52" fill="#E8B84B"/>
+  <circle cx="52" cy="82" r="7" fill="#024c48"/>
+  <circle cx="84" cy="82" r="7" fill="#024c48"/>
+  <path d="M44 104 Q68 128 92 104" fill="none" stroke="#024c48" stroke-width="6" stroke-linecap="round"/>
+  <!-- Drama mask (sad) - offset, overlapping -->
+  <circle cx="132" cy="105" r="52" fill="#E85D3A"/>
+  <circle cx="116" cy="92" r="7" fill="#024c48"/>
+  <circle cx="148" cy="92" r="7" fill="#024c48"/>
+  <path d="M108 120 Q132 100 156 120" fill="none" stroke="#024c48" stroke-width="6" stroke-linecap="round"/>
+</svg>

@@ -1,289 +1,211 @@
 ' ==================== Overlays.brs ====================
-' Manages every visual overlay that sits on top of the main UI:
-'   - Channel info banner + clock
+' Manages every visual overlay on top of the main UI:
 '   - Error overlays (preview & fullscreen)
-'   - Mute indicator
-'   - Buffer progress bar
-'   - Grid decorations (VideoClipLeft, TV frame, mute hint, channel name)
+'   - Reconnect overlay (stream-down / network-down)
+'   - Buffer progress bar + slow-buffer detector
+'   - Grid decoration overlays
 '   - Screensaver shade
+' Channel bar (logo/name/CC/Details/Live) lives in ChannelBar.brs.
 
-' ---------- Channel info banner ----------
-
-sub showChannelInfo(channel as Object)
-    if m.channelInfoOverlay = invalid or m.channelInfoLabel = invalid then return
-
-    channelNumber  = (m.currentChannelIndex + 1).ToStr()
-    totalChannels  = m.flatChannelList.Count().ToStr()
-    m.channelInfoLabel.text = channelNumber + "/" + totalChannels + " - " + channel.title
-    showClock()
-    m.channelInfoOverlay.visible = true
-
-    if m.channelInfoTimer <> invalid then m.channelInfoTimer.control = "stop"
-
-    m.channelInfoTimer = CreateObject("roSGNode", "Timer")
-    m.channelInfoTimer.duration = 3
-    m.channelInfoTimer.repeat   = false
-    m.channelInfoTimer.ObserveField("fire", "hideChannelInfo")
-    m.channelInfoTimer.control  = "start"
-end sub
-
-sub showChannelInfoPersistent(channel as Object)
-    if m.channelInfoOverlay = invalid or m.channelInfoLabel = invalid then return
-    if m.channelInfoTimer <> invalid then
-        m.channelInfoTimer.control = "stop"
-        m.channelInfoTimer = invalid
-    end if
-    channelNumber = (m.currentChannelIndex + 1).ToStr()
-    totalChannels = m.flatChannelList.Count().ToStr()
-    m.channelInfoLabel.text = channelNumber + "/" + totalChannels + " - " + channel.title
-    showClock()
-    m.channelInfoOverlay.visible = true
-end sub
-
-sub showChannelInfoMessage(message as String)
-    if m.channelInfoOverlay = invalid or m.channelInfoLabel = invalid then return
-    m.channelInfoLabel.text = message
-    showClock()
-    m.channelInfoOverlay.visible = true
-
-    if m.channelInfoTimer <> invalid then m.channelInfoTimer.control = "stop"
-
-    m.channelInfoTimer = CreateObject("roSGNode", "Timer")
-    m.channelInfoTimer.duration = 2
-    m.channelInfoTimer.repeat   = false
-    m.channelInfoTimer.ObserveField("fire", "hideChannelInfo")
-    m.channelInfoTimer.control  = "start"
-end sub
-
-sub hideChannelInfo()
-    if m.channelInfoOverlay <> invalid then m.channelInfoOverlay.visible = false
-    if m.clockLabel <> invalid then m.clockLabel.text = ""
-end sub
-
-sub showClock()
-    if m.clockLabel = invalid then return
-    dt = CreateObject("roDateTime")
-    dt.ToLocalTime()
-    hours   = dt.GetHours()
-    minutes = dt.GetMinutes()
-    ampm = "AM"
-    if hours >= 12 then
-        ampm = "PM"
-        if hours > 12 then hours = hours - 12
-    end if
-    if hours = 0 then hours = 12
-    minStr = minutes.ToStr()
-    if minutes < 10 then minStr = "0" + minStr
-    m.clockLabel.text = hours.ToStr() + ":" + minStr + " " + ampm
+' ---------- Comprehensive retry-timer cleanup ----------
+' Cancels every timer that could resurrect the retry/reconnect flow after
+' it's been dismissed. cancelRetryOverlay(), _silentCancelRetry(), and
+' cancelAnyInFlightRetry() all call this now. Previously each had its own
+' smaller subset — notably cancelRetryOverlay() never cancelled
+' errorDelayTimer, so a pending 4s retry-delay (see ErrorDelayTimer.brs)
+' could still fire afterward and call retryStream(), resurrecting the
+' overlay even though the user had already dismissed it via up/down.
+sub _cancelAllRetryTimers()
+    cancelErrorDelayTimer()
+    cancelStreamRetryTimer()
+    cancelCountdownTickTimer()
+    cancelStallTimer()
+    cancelSlowBufferRecoveryTimer()
+    cancelNetworkPollTimer()
+    cancelChannelLoadBufferTimer()
+    cancelDialogShadeTimer()
 end sub
 
 ' ---------- Error overlays ----------
+' Note: channel name lookups use m.loadingChannelIndex (the channel that was
+' actually being loaded) rather than m.currentChannelIndex (what has focus now),
+' so error messages show the correct channel when focus moves during loading.
 
 sub showChannelError(errorMsg as String)
     friendlyMsg = getFriendlyError(errorMsg)
+    m.lastError.msg = friendlyMsg
 
-    m.lastErrorMsg          = friendlyMsg
-    m.lastErrorChannelIndex = m.currentChannelIndex
+    ' Use loading channel index for correct name
+    m.lastError.channelIndex = m.loadingChannelIndex
+    if m.lastError.channelIndex < 0 then m.lastError.channelIndex = m.currentChannelIndex
 
     hideBufferBar()
     cancelStallTimer()
-
     if m.isPlayingVideo then resetFullscreenInactivityTimer() else resetGridInactivityTimer()
-
     if m.isPlayingVideo then
         showFullscreenError(friendlyMsg)
     else
-        showPreviewError(friendlyMsg)
-        showErrorOverlay(errorMsg)
+        showPreviewError()
     end if
 end sub
 
 sub showFullscreenError(friendlyMsg as String)
-    if m.fullscreenFailContainer = invalid then return
-    channel     = m.flatChannelList[m.currentChannelIndex]
-    channelName = "Unknown Channel"
-    if channel <> invalid and channel.title <> invalid then channelName = channel.title
-    channelNum = (m.currentChannelIndex + 1).ToStr() + "/" + m.flatChannelList.Count().ToStr()
-    if m.fullscreenFailChannel <> invalid then m.fullscreenFailChannel.text = channelNum + "  -  " + channelName
-    if m.fullscreenFailLabel   <> invalid then m.fullscreenFailLabel.text   = friendlyMsg
-    m.fullscreenFailContainer.visible = true
+    ' Fullscreen errors now go through the reconnect overlay gave-up state
+    ' so the user sees the retry button rather than the old static container
+    showGaveUpState(friendlyMsg)
 end sub
 
-sub showPreviewError(friendlyMsg as String)
-    if m.previewErrorContainer = invalid then return
-    m.previewErrorContainer.visible = true
+sub showPreviewError()
+    if m.previewErrorContainer <> invalid then m.previewErrorContainer.visible = true
 end sub
 
 sub hidePreviewError()
     if m.previewErrorContainer <> invalid then m.previewErrorContainer.visible = false
 end sub
 
-sub showErrorOverlay(errorMsg as String)
-    if m.errorOverlay = invalid then return
+' ---------- Reconnect overlay ----------
+' Three modes:
+'   Retry active   - spinner on, status = what we are trying, no error label, no dismiss hint
+'   Outage/network - spinner on, status = down message, countdown, dismiss hint hidden/shown
+'   Gave up        - spinner off, status = "Could not load", error label shown, OK to retry hint
 
-    channel     = m.flatChannelList[m.currentChannelIndex]
+' Called at the start of each retry step to show progress to the user.
+' Shows the overlay with spinner running and updates the status line.
+sub showRetryStatus(message as String)
+    if m.reconnectOverlay = invalid then return
+    hideChannelBar()
+    m.reconnectState = "ladder"
+
+    ' Set channel name
+    idx = m.loadingChannelIndex
+    if idx < 0 then idx = m.currentChannelIndex
     channelName = "Unknown Channel"
-    channelNum  = (m.currentChannelIndex + 1).ToStr() + "/" + m.flatChannelList.Count().ToStr()
-    if channel <> invalid and channel.title <> invalid then channelName = channel.title
-
-    if m.errorTitleLabel   <> invalid then m.errorTitleLabel.text   = "Channel Unavailable"
-    if m.errorChannelLabel <> invalid then m.errorChannelLabel.text = channelNum + "  -  " + channelName
-    if m.errorMessageLabel <> invalid then
-        if m.lastErrorMsg <> "" and m.lastErrorChannelIndex = m.currentChannelIndex then
-            m.errorMessageLabel.text = m.lastErrorMsg
-        else
-            m.errorMessageLabel.text = getFriendlyError(errorMsg)
-        end if
-    end if
-
-    m.errorOverlay.visible = true
-    m.errorVisible         = true
-    if m.focusTrap <> invalid then m.focusTrap.SetFocus(true)
+    channel = iif(m.flatChannelList <> invalid and idx >= 0 and idx < m.flatChannelList.Count(), m.flatChannelList[idx], invalid)
+    if channel <> invalid and cleanChannelTitle(channel) <> "" then channelName = cleanChannelTitle(channel)
+    if m.reconnectChannelLabel  <> invalid then m.reconnectChannelLabel.text     = channelName
+    if m.reconnectStatusLabel   <> invalid then m.reconnectStatusLabel.text      = message
+    if m.reconnectErrorLabel    <> invalid then m.reconnectErrorLabel.visible    = false
+    if m.reconnectCountdownLabel <> invalid then m.reconnectCountdownLabel.text  = ""
+    if m.reconnectActionLabel   <> invalid then m.reconnectActionLabel.text      = "CANCEL"
+    if m.reconnectSpinner       <> invalid then m.reconnectSpinner.visible       = true
+    m.reconnectOverlay.visible = true
+    if m.reconnectOverlayBorder <> invalid then m.reconnectOverlayBorder.visible = true
+    ' Dim the rest of the screen for the whole time this overlay is up, not
+    ' just once it reaches the terminal gave-up state.
+    if m.screensaverOverlay <> invalid then m.screensaverOverlay.visible = true
+    ' Clear any dialog-shade left over from a prior outage-loop cycle —
+    ' a fresh active retry step means we're not stalled anymore.
+    cancelDialogShadeTimer()
 end sub
 
-sub hideErrorOverlay()
-    if m.errorOverlay <> invalid then m.errorOverlay.visible = false
-    m.errorVisible = false
-end sub
+sub _showReconnectOverlay(isNetworkDown as Boolean)
+    if m.reconnectOverlay = invalid then return
+    hideChannelBar()
+    m.reconnectState = iif(isNetworkDown, "network", "outage")
 
-' ---------- Mute indicator ----------
+    ' Set channel name
+    idx = m.loadingChannelIndex
+    if idx < 0 then idx = m.currentChannelIndex
+    channelName = "Unknown Channel"
+    channel = iif(m.flatChannelList <> invalid and idx >= 0 and idx < m.flatChannelList.Count(), m.flatChannelList[idx], invalid)
+    if channel <> invalid and cleanChannelTitle(channel) <> "" then channelName = cleanChannelTitle(channel)
+    if m.reconnectChannelLabel <> invalid then m.reconnectChannelLabel.text = channelName
 
-sub showMuteIndicator()
-    if m.muteIndicatorContainer = invalid or m.muteIndicatorImage = invalid then return
-
-    m.muteIndicatorImage.uri = iif(m.previewMuted, "pkg:/images/muteon.png", "pkg:/images/muteoff.png")
-    m.muteIndicatorContainer.visible = true
-
-    if m.muteIndicatorTimer <> invalid then
-        m.muteIndicatorTimer.control = "stop"
-        m.muteIndicatorTimer.unobserveField("fire")
-    end if
-
-    m.muteIndicatorTimer = CreateObject("roSGNode", "Timer")
-    m.muteIndicatorTimer.duration = 2
-    m.muteIndicatorTimer.repeat   = false
-    m.muteIndicatorTimer.ObserveField("fire", "hideMuteIndicator")
-    m.muteIndicatorTimer.control  = "start"
-end sub
-
-sub hideMuteIndicator()
-    if m.muteIndicatorContainer <> invalid then m.muteIndicatorContainer.visible = false
-end sub
-
-' ---------- Buffer progress bar ----------
-
-sub onBufferingStatus()
-    status = m.previewVideo.bufferingStatus
-    if status = invalid then return
-
-    pct = 0
-    if status.percentage <> invalid then pct = status.percentage
-
-    if not m.bufferVisible and pct < 100 then
-        if m.bufferDelayTimer = invalid then
-            m.bufferDelayTimer = CreateObject("roSGNode", "Timer")
-            m.bufferDelayTimer.duration = 1.0
-            m.bufferDelayTimer.repeat   = false
-            m.bufferDelayTimer.ObserveField("fire", "showBufferBar")
-            m.bufferDelayTimer.control  = "start"
-        end if
-    end if
-
-    if m.bufferVisible then updateBufferBar(pct)
-
-    ' Stall detection
-    if pct <> m.lastBufferPct and pct < 100 then
-        m.lastBufferPct = pct
-        if m.stallTimer <> invalid then
-            m.stallTimer.control = "stop"
-            m.stallTimer.unobserveField("fire")
-            m.stallTimer = invalid
-        end if
-        m.stallTimer = CreateObject("roSGNode", "Timer")
-        m.stallTimer.duration = 5.0
-        m.stallTimer.repeat   = false
-        m.stallTimer.ObserveField("fire", "onBufferStall")
-        m.stallTimer.control  = "start"
-    end if
-
-    if pct >= 100 then
-        hideBufferBar()
-        cancelStallTimer()
-    end if
-end sub
-
-sub showBufferBar()
-    if m.bufferDelayTimer <> invalid then
-        m.bufferDelayTimer.unobserveField("fire")
-        m.bufferDelayTimer = invalid
-    end if
-
-    if m.previewVideo.state <> "buffering" then return
-
-    if m.isPlayingVideo then
-        ' Fullscreen - centred near bottom
-        m.bufferContainer.translation = [560, 980]
-        m.bufferContainer.width       = 800
-        m.bufferTrack.width           = 794
-        m.bufferLabel.width           = 800
+    ' Set status based on mode
+    if isNetworkDown then
+        if m.reconnectStatusLabel  <> invalid then m.reconnectStatusLabel.text     = "No network connection"
     else
-        ' Grid - centred over preview area
-        m.bufferContainer.translation = [1467, 252]
-        m.bufferContainer.width       = 283
-        m.bufferTrack.width           = 277
-        m.bufferLabel.width           = 283
+        if m.reconnectStatusLabel  <> invalid then m.reconnectStatusLabel.text     = "Stream source appears to be down"
     end if
 
-    m.bufferContainer.visible = true
-    m.bufferVisible           = true
-
-    status = m.previewVideo.bufferingStatus
-    if status <> invalid and status.percentage <> invalid then
-        updateBufferBar(status.percentage)
-    end if
+    if m.reconnectErrorLabel    <> invalid then m.reconnectErrorLabel.visible    = false
+    if m.reconnectCountdownLabel <> invalid then m.reconnectCountdownLabel.text  = ""
+    if m.reconnectActionLabel   <> invalid then m.reconnectActionLabel.text      = "CANCEL"
+    if m.reconnectSpinner       <> invalid then m.reconnectSpinner.visible       = true
+    m.reconnectOverlay.visible = true
+    if m.reconnectOverlayBorder <> invalid then m.reconnectOverlayBorder.visible = true
+    if m.screensaverOverlay <> invalid then m.screensaverOverlay.visible = true
 end sub
 
-sub updateBufferBar(pct as Integer)
-    if m.bufferFill = invalid or m.bufferLabel = invalid then return
-    trackWidth = m.bufferTrack.width
-    fillWidth  = Int(trackWidth * pct / 100)
-    if fillWidth < 0 then fillWidth = 0
-    if fillWidth > trackWidth then fillWidth = trackWidth
-    m.bufferFill.width = fillWidth
-    m.bufferLabel.text = pct.ToStr() + "%"
+' Show the terminal gave-up state — spinner off, error reason shown, OK to retry.
+sub showGaveUpState(friendlyMsg as String)
+    if m.reconnectOverlay = invalid then return
+    m.reconnectState = "gaveup"
+    hideChannelBar()
+
+    ' Set channel name
+    idx = m.loadingChannelIndex
+    if idx < 0 then idx = m.currentChannelIndex
+    channelName = "Unknown Channel"
+    channel = iif(m.flatChannelList <> invalid and idx >= 0 and idx < m.flatChannelList.Count(), m.flatChannelList[idx], invalid)
+    if channel <> invalid and cleanChannelTitle(channel) <> "" then channelName = cleanChannelTitle(channel)
+    if m.reconnectChannelLabel  <> invalid then m.reconnectChannelLabel.text     = channelName
+    if m.reconnectSpinner       <> invalid then m.reconnectSpinner.visible       = false
+    if m.reconnectStatusLabel   <> invalid then m.reconnectStatusLabel.text      = "Could not load this channel"
+    if m.reconnectErrorLabel    <> invalid then
+        m.reconnectErrorLabel.text    = friendlyMsg
+        m.reconnectErrorLabel.visible = true
+    end if
+    if m.reconnectCountdownLabel <> invalid then m.reconnectCountdownLabel.text  = ""
+    if m.reconnectActionLabel   <> invalid then m.reconnectActionLabel.text      = "RETRY"
+    m.reconnectOverlay.visible = true
+    if m.reconnectOverlayBorder <> invalid then m.reconnectOverlayBorder.visible = true
+    ' Dim the rest of the screen immediately — this is a terminal state the
+    ' user needs to actually read, not something that should wait on the
+    ' normal 45s inactivity timer to get shaded.
+    if m.screensaverOverlay <> invalid then m.screensaverOverlay.visible = true
+    ' If nobody touches this for another 30s, shade the dialog itself too.
+    startDialogShadeTimer()
 end sub
 
-sub hideBufferBar()
-    if m.bufferDelayTimer <> invalid then
-        m.bufferDelayTimer.control = "stop"
-        m.bufferDelayTimer.unobserveField("fire")
-        m.bufferDelayTimer = invalid
+sub hideReconnectingOverlay()
+    if m.reconnectOverlay       <> invalid then m.reconnectOverlay.visible       = false
+    if m.reconnectOverlayBorder <> invalid then m.reconnectOverlayBorder.visible = false
+    if m.reconnectSpinner  <> invalid then m.reconnectSpinner.visible  = true   ' reset spinner for next use
+    if m.reconnectErrorLabel <> invalid then m.reconnectErrorLabel.visible = false
+    ' Always ensure shader is off when overlay hides
+    if m.screensaverOverlay <> invalid then m.screensaverOverlay.visible = false
+    cancelDialogShadeTimer()
+end sub
+
+sub updateReconnectStatus(message as String)
+    if m.reconnectStatusLabel <> invalid then m.reconnectStatusLabel.text = message
+end sub
+
+sub updateReconnectCountdown(seconds as Dynamic)
+    if m.reconnectCountdownLabel = invalid then return
+    if type(seconds) = "Integer" or type(seconds) = "roInt" then
+        if seconds > 0 then
+            m.reconnectCountdownLabel.text = "Retrying in " + seconds.ToStr() + " seconds..."
+        else
+            m.reconnectCountdownLabel.text = "Retrying now..."
+        end if
+    else
+        m.reconnectCountdownLabel.text = iif(seconds = invalid, "", seconds)
     end if
-    if m.bufferContainer <> invalid then m.bufferContainer.visible = false
-    if m.bufferFill      <> invalid then m.bufferFill.width        = 0
-    if m.bufferLabel     <> invalid then m.bufferLabel.text        = ""
-    m.bufferVisible = false
 end sub
 
 ' ---------- Grid decoration overlays ----------
 
 sub showGridOverlays()
-    if m.videoClipLeft             <> invalid then m.videoClipLeft.visible             = true
-    if m.muteHintContainer         <> invalid then m.muteHintContainer.visible         = true
-    if m.tvOverlay                 <> invalid then m.tvOverlay.visible                 = true
-    if m.previewChannelNameContainer <> invalid then m.previewChannelNameContainer.visible = true
-    if m.lastErrorMsg <> "" and m.lastErrorChannelIndex = m.currentChannelIndex then
-        showPreviewError(m.lastErrorMsg)
+    if m.videoClipLeft               <> invalid then m.videoClipLeft.visible               = true
+    if m.tvOverlay                   <> invalid then m.tvOverlay.visible                   = true
+    if m.previewChannelNameContainer <> invalid then m.previewChannelNameContainer.visible     = true
+    if m.flatChannelList <> invalid and m.currentChannelIndex >= 0 and m.currentChannelIndex < m.flatChannelList.Count() then
+        _updatePreviewLogo(m.flatChannelList[m.currentChannelIndex])
+    end if
+    if m.lastError.msg <> "" and m.lastError.channelIndex = m.currentChannelIndex then
+        showPreviewError()
     end if
     m.playlistPanelActive = false
     m.channelList.SetFocus(true)
 end sub
 
 sub hideGridOverlays()
-    if m.videoClipLeft             <> invalid then m.videoClipLeft.visible             = false
-    if m.muteHintContainer         <> invalid then m.muteHintContainer.visible         = false
-    if m.tvOverlay                 <> invalid then m.tvOverlay.visible                 = false
-    if m.previewChannelNameContainer <> invalid then m.previewChannelNameContainer.visible = false
+    if m.videoClipLeft               <> invalid then m.videoClipLeft.visible               = false
+    if m.tvOverlay                   <> invalid then m.tvOverlay.visible                   = false
+    if m.previewChannelNameContainer <> invalid then m.previewChannelNameContainer.visible     = false
+    if m.previewChannelLogo          <> invalid then m.previewChannelLogo.visible           = false
     hidePreviewError()
 end sub
 
@@ -299,13 +221,65 @@ sub hideOverlay()
     end if
 end sub
 
-sub updatePreviewHint()
-    if m.previewHintLabel = invalid then return
-    m.previewHintLabel.text = iif(m.previewMuted, "Press RIGHT to unmute", "Press RIGHT to mute")
+' ---------- Cancel / dismiss loading overlay ----------
+' Called when user presses Back while the reconnect overlay is showing.
+' Stops all retry activity and shows the appropriate error UI.
+
+sub cancelRetryOverlay()
+    print ">>> CANCEL: User cancelled loading"
+    ' Kill all retry timers
+    _resetRetryState()
+    _cancelAllRetryTimers()
+    stopPreviewVideo()
+    hideReconnectingOverlay()
+
+    if m.isPlayingVideo then
+        ' Fullscreen: show gave-up state
+        showGaveUpState(getFriendlyError(""))
+    else
+        ' Grid: preview error indicator only
+        showPreviewError()
+    end if
 end sub
 
-' ---------- Inline ternary helper (BrightScript lacks one) ----------
-function iif(condition as Boolean, trueVal as Dynamic, falseVal as Dynamic) as Dynamic
-    if condition then return trueVal
-    return falseVal
-end function
+' Stops all retry timers without showing any error UI — used when the user
+' is navigating straight to a different channel (e.g. replay/jump-to-previous)
+' rather than dismissing into an error state.
+sub _silentCancelRetry()
+    print ">>> CANCEL: Silent (navigating away while loading)"
+    ' Stop async operations that may be in flight
+    ' ManifestPatcher: clear pendingRetryContent so onManifestPatched ignores the result
+    m.pendingRetryContent = invalid
+    m.pendingProxyContent = invalid
+    ' Stop the proxy if it was starting for the old channel
+    if m.localProxy <> invalid and m.localProxy.status <> "idle" and m.localProxy.status <> "stopped" then
+        print ">>> CANCEL: Stopping LocalProxy (was starting for cancelled channel)"
+        m.localProxy.stopProxy = true
+    end if
+    m.proxyOriginalUrl = ""
+    _resetRetryState()
+    _cancelAllRetryTimers()
+    stopPreviewVideo()
+    hideReconnectingOverlay()
+end sub
+
+' Clears any in-flight reconnect state (m.reconnectState: ladder/outage/
+' gaveup — network is excluded, see below) and its timers in one call. Used
+' by selection observers (itemSelected on the grid list and the quick-menu
+' overlay list) which can fire independently of onKeyEvent's dialog
+' intercept, so they need to do this cleanup themselves before acting on
+' the selection. Doesn't check for "network": onKeyEvent has a hard input
+' lockout while m.reconnectState = "network", so this is never reachable
+' in that state anyway.
+sub cancelAnyInFlightRetry()
+    ' Always cancel if the retry ladder is actively running (retryCount > 0)
+    ' even if the reconnect overlay isn't visible yet — the async patcher/proxy
+    ' must be stopped or they'll fire against the wrong channel.
+    if m.retryCount > 0 then
+        _silentCancelRetry()
+        return
+    end if
+    ' Also cancel if the reconnect overlay is showing or in gave-up/outage state
+    if (m.reconnectOverlay = invalid or not m.reconnectOverlay.visible) and m.reconnectState <> "gaveup" and m.reconnectState <> "outage" then return
+    _silentCancelRetry()
+end sub

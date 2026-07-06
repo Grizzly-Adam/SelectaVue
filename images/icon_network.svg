@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <rect width="200" height="200" fill="#024c48"/>
+  <!-- Tower base -->
+  <polygon points="100,50 82,178 118,178" fill="#8fcdc1"/>
+  <!-- Tower detail -->
+  <rect x="86" y="130" width="28" height="6" fill="#024c48"/>
+  <rect x="90" y="100" width="20" height="6" fill="#024c48"/>
+  <!-- Signal waves left -->
+  <path d="M72,90 Q50,100 72,116" fill="none" stroke="#E8B84B" stroke-width="7" stroke-linecap="round"/>
+  <path d="M52,72 Q18,100 52,130" fill="none" stroke="#E8B84B" stroke-width="7" stroke-linecap="round"/>
+  <!-- Signal waves right -->
+  <path d="M128,90 Q150,100 128,116" fill="none" stroke="#E8B84B" stroke-width="7" stroke-linecap="round"/>
+  <path d="M148,72 Q182,100 148,130" fill="none" stroke="#E8B84B" stroke-width="7" stroke-linecap="round"/>
+  <!-- Top dot -->
+  <circle cx="100" cy="50" r="10" fill="#E85D3A"/>
+</svg>

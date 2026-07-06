@@ -1,41 +1,91 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <component name="MainScene" extends="Scene" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://rokudev.roku.com/rokudev/schema/RokuSceneGraph.xsd" initialFocus="channelList">
+
 <!-- Core scene init, SetContent, loadPlaylist -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/MainScene.brs"/>
-<!-- Pure helper functions: isValidUrl, getFriendlyError, getLanguageName, toStr -->
+<!-- ManifestPatcher and LocalProxy callbacks -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/ManifestCallbacks.brs"/>
+<!-- iif, detectStreamFormat, BUILTIN_PLAYLIST_COUNT, getFriendlyError, getLanguageName, toStr, isValidUrl -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/Utils.brs"/>
-<!-- Persist and restore last playlist + channel across launches -->
+<script type="text/brightscript" uri="pkg:/components/Shared/PlaylistSort.brs"/>
+<!-- Save / load / restore last playlist + channel across launches -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/StateManager.brs"/>
-<!-- Playlist CRUD (built-in + user), side-panel menu, add/edit/delete dialogs -->
+<!-- Playlist data: load/save from registry, side-panel menu, selection -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/PlaylistManager.brs"/>
-<!-- Play, preview, reload, channel navigation, audio/subtitle menus -->
-<script type="text/brightscript" uri="pkg:/components/MainScene/VideoPlayback.brs"/>
-<!-- All visual overlays: errors, mute indicator, buffer bar, channel info, clock -->
+<!-- Per-playlist Edit Name / Edit URL / Delete dialogs -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/PlaylistEditDialogs.brs"/>
+<!-- Add-new-playlist two-step dialog + shared dialog helpers -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/PlaylistAddDialog.brs"/>
+<!-- Channel flat-list building and lookup by index/URL -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/ChannelList.brs"/>
+<!-- Channel focus and selection event handlers -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/ChannelSelection.brs"/>
+<!-- User-agent, content nodes, geometry, play/preview, pending headers -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/VideoCore.brs"/>
+<!-- The unified retry ladder (steps 0-5+) -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/RetryLadder.brs"/>
+<!-- Stream-outage retry loop (ladder exhausted, stream was playing) -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/StreamOutageLoop.brs"/>
+<!-- Network-down detection and polling -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/NetworkDownProtocol.brs"/>
+<!-- Brief pause before retrying on a clean (non-stall) error -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/ErrorDelayTimer.brs"/>
+<!-- Channel navigation, reload, launch-fullscreen, video state observer -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/ChannelNav.brs"/>
+<!-- Per-playlist favorites: storage, toggle, favorites grid view -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/Favorites.brs"/>
+<!-- Bottom-third channel bar: logo, name, Favorite/CC/Details/Live buttons -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/ChannelBar.brs"/>
+<!-- Audio, subtitle and channel-details option menus -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/MediaMenus.brs"/>
+<!-- Visual overlays: channel info, errors, reconnect states, grid decorations -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/Overlays.brs"/>
-<!-- Inactivity timers (grid, fullscreen, overlay, options) and stall-retry logic -->
+<!-- Buffer progress bar, stall detection, slow-buffer step-down -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/BufferBar.brs"/>
+<!-- UI inactivity timers: grid/fullscreen screensaver, quick-menu and dialog auto-close -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/Timers.brs"/>
-<!-- onKeyEvent - routes key presses to the appropriate module -->
+<!-- Playback-health timers: stall, slow-buffer recovery, countdown, OK-suppression -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/PlaybackHealthTimers.brs"/>
+<!-- Session-token stream refresh timer -->
+<!-- onKeyEvent — reconnect-dialog intercept, inactivity resets, dispatch to fullscreen/grid -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/InputHandler.brs"/>
+<!-- Fullscreen key handling: channel bar, surfing, quick menu, play/pause, replay -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/FullscreenInput.brs"/>
+<!-- Grid key handling: channel list, playlist panel, favorite toggle, replay -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/GridInput.brs"/>
+<!-- Per-channel stream settings cache (session + persistent) -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/SettingsCache.brs"/>
+<!-- Builds the grid background texture at startup -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/BackgroundTexture.brs"/>
+
 <children>
+    <!-- Grid background: a stretched reflection sweep + a stretched vignette
+         shadow, built at runtime in BackgroundTexture.brs
+         (_buildGridBackgroundTexture, called from MainScene.brs init).
+         A tiled metal-flake layer was tried here too and removed after
+         review — see BackgroundTexture.brs for details.
+         Same show/hide lifecycle as sidePanel/channelList (grid-only). -->
+    <Group id="gridBackgroundTexture" visible="false"/>
+
     <Rectangle
         id="sidePanel"
         translation="[0, 0]"
-        width="460"
+        width="520"
         height="1080"
         color="0x8fcdc1DD"
-        visible="true">
+        visible="false">
         
         <Poster
             id="logoImage"
             uri="pkg:/images/selectaview.png"
-            translation="[45,60]"
+            translation="[1430,900]"
             width="400"
             height="100" />
 
         <LabelList
             id="playlistList"
-            translation="[90, 180]"
+            translation="[90, 100]"
             itemSize="[290, 60]"
             numRows="11"
             itemSpacing="[0, 10]"
@@ -44,15 +94,15 @@
     
     <LabelList
     	id="channelList"
-    	translation="[520, 120]"
-    	itemSize="[830, 50]"
+    	translation="[580, 120]"
+    	itemSize="[770, 50]"
     	numRows="16"
     	itemSpacing="[0, 5]"
         color="0xDDDDDDFF"
         focusedColor="0x111111FF"
         sectionDividerFont="font:SmallBoldSystemFont"
-        sectionDividerTextColor="0x8fcdc0FF"
-    	visible="true"/>
+        sectionDividerTextColor="0x8fcdc1FF"
+    	visible="false"/>
     
     <!-- Video preview in the grid -->
     <Video
@@ -60,17 +110,9 @@
         translation="[1380, 145]"
         width="444"
         height="250"
-        visible="true"
+        visible="false"
         focusable="false"
         enableUI="false"/>
-    <Rectangle
-        id="VideoClipLeft"
-        translation="[1380, 145]"
-        width="60"
-        height="250"
-        color="0x024c48FF"
-        visible="true">    
-    </Rectangle>
 
     <!-- Preview error overlay -->
     <Rectangle
@@ -84,19 +126,19 @@
             translation="[0, 12]"
             text="Channel"
             font="font:MediumBoldSystemFont"
-            color="0xFF4444FF"
+            color="0x8fcdc1FF"
             width="384"
             horizAlign="center"/>
         <Label
             translation="[0, 55]"
             text="Unavailable"
             font="font:MediumBoldSystemFont"
-            color="0xFF4444FF"
+            color="0x8fcdc1FF"
             width="384"
             horizAlign="center"/>
     </Rectangle>
 
-    <!-- Channel name under preview -->
+    <!-- Channel name under preview — original position, unchanged -->
     <Rectangle
         id="previewChannelNameContainer"
         translation="[1420, 455]"
@@ -117,126 +159,174 @@
             horizAlign="center"/>
     </Rectangle>
 
-    <Rectangle
-        id="muteHintContainer"
-        translation="[1420, 510]"
+    <!-- Channel logo — separate, centered below the channel name box -->
+    <Poster
+        id="previewChannelLogo"
+        translation="[1420, 630]"
         width="444"
-        height="50"
-        color="0x222222FF"
-        visible="true">    
+        height="160"
+        loadDisplayMode="scaleToFit"
+        visible="false"/>
+
+    <!-- Loaded playlist / favorites indicator — sits above the channel list -->
+    <Rectangle
+        id="channelListHeaderLabelContainer"
+        translation="[550, 40]"
+        width="830"
+        height="58"
+        color="0x8fcdc1DD"
+        visible="false">
         <Label
-            id="previewHintLabel"
-            translation="[5, 10]"
-            text="Press RIGHT to mute"
-            font="font:SmallSystemFont"
-            color="0x8fcdc1DD"
-            width="390"
-            horizAlign="center"/>
+            id="channelListHeaderLabel"
+            translation="[10,10]"
+            text=""
+            font="font:MediumBoldSystemFont"
+            color="0x222222FF"
+            width="830"
+            height="40"
+            wrap="true"
+            maxLines="2"
+            horizAlign="center"
+            visible="false"/>
     </Rectangle>
 
     <!-- TV overlaying preview -->
-        <Poster
-            id="TV overlay"
-            uri="pkg:/images/retro-set.png"
-            translation="[1410, 120]"
-            width="480"
-            height="327"/>
+    <Poster
+        id="TV overlay"
+        uri="pkg:/images/retro-set.png"
+        translation="[1410, 120]"
+        width="480"
+        height="327"
+        visible="false"/>
 
-    <!-- Video to full screen -->
-    <!-- Removed: PreviewVideo is now used for both preview and fullscreen -->
 
-    <!-- Mute indicator overlay -->
+    <!-- Bottom-third channel bar: logo, name, CC/Details/Live/Favorite icon buttons -->
+    <!-- Replaces the old channel info banner + OK options dialog. -->
+    <!-- Auto-shows on channel change, toggles via OK, focus index in m.barFocusIndex -->
+    <!-- Height (150) is sized exactly to the tallest content (the logo,
+         140px) plus 5px padding top and bottom, bottom edge anchored at
+         the screen edge (y=930-1080). The logo sits at y=5 (using the
+         full padding budget); the shorter name/button row (72px) is
+         vertically centered within the 150px bar at y=39.
+
+         Left to right: logo chained to the channel name (both right-
+         aligned, name's right edge at x=940) — buttons, ending at x=1515.
+         There used to be a clock at x=1610 (removed); the buttons' window
+         was centered against its left edge and were left at that same
+         position rather than re-centered in the now-clock-less space. -->
     <Rectangle
-        id="muteIndicatorContainer"
-        translation="[1740, 40]"
-        width="140"
-        height="103"
-        color="0x000000CC"
+        id="channelBar"
+        translation="[0, 930]"
+        width="1920"
+        height="150"
+        color="0x024c48CC"
         visible="false">
-        <Poster
-            id="muteIndicatorImage"
-            translation="[10, 10]"
-            width="120"
-            height="83"
-            uri=""/>
-    </Rectangle>
-    
-    <Rectangle
-        id="channelInfoOverlay"
-        translation="[60, 860]"
-        width="700"
-        height="170"
-        color="0x000000CC"
-        visible="false">
-        
-        <Label
-            id="channelInfoLabel"
-            translation="[20, 15]"
-            text=""
-            font="font:MediumBoldSystemFont"
-            color="0xFFFFFFFF"
-            width="660"
-            height="90"
-            wrap="true"
-            maxLines="2"/>
 
+        <!-- Left half (0-960): logo chained to the channel name, both
+             right-aligned so the pair sits flush against the buttons at
+             x=960 (20px margin) rather than centered or split apart. -->
+
+        <!-- Logo — sits immediately left of the name -->
+        <Poster
+            id="channelBarLogo"
+            translation="[240, 10]"
+            width="300"
+            height="130"
+            loadDisplayMode="scaleToFit"
+            visible="false"/>
+
+        <!-- Server / playlist name — sits above the channel name -->
         <Label
-            id="clockLabel"
-            translation="[20, 120]"
+            id="channelBarServerLabel"
+            translation="[592, 10]"
             text=""
             font="font:SmallSystemFont"
-            color="0xAAAAAAFF"
-            width="660"
-            height="35"/>
-    </Rectangle>
+            color="0x9FB5B0FF"
+            width="754"
+            height="64"
+            vertAlign="center"
+            horizAlign="left"
+            wrap="false"
+            maxLines="1"/>
 
-    <!-- Error overlay - centered on screen -->
-    <Rectangle
-        id="errorOverlay"
-        translation="[460, 240]"
-        width="1000"
-        height="560"
-        color="0x000000EE"
-        visible="false">
-
+        <!-- Channel name  -->
         <Label
-            id="errorTitleLabel"
-            translation="[30, 30]"
+            id="channelBarNameLabel"
+            translation="[592, 72]"
             text=""
             font="font:LargeBoldSystemFont"
-            color="0xFF4444FF"
-            width="940"
-            height="60"/>
-
-        <Label
-            id="errorChannelLabel"
-            translation="[30, 100]"
-            text=""
-            font="font:MediumBoldSystemFont"
             color="0xFFFFFFFF"
-            width="940"
-            height="50"/>
-
-        <Label
-            id="errorMessageLabel"
-            translation="[30, 160]"
-            text=""
-            font="font:SmallSystemFont"
-            color="0xCCCCCCFF"
-            width="940"
-            height="320"
+            width="994"
+            height="72"
+            vertAlign="center"
             wrap="true"
-            maxLines="10"/>
+            maxLines="1"/>
 
-        <Label
-            translation="[30, 510]"
-            text="Press OK to dismiss"
-            font="font:SmallSystemFont"
-            color="0x888888FF"
-            width="940"
-            height="35"/>
+        <!-- Buttons -->
+        <Rectangle
+            id="channelBarFavoriteBtn"
+            translation="[1354, 10]"
+            width="56"
+            height="56"
+            color="0x3D5C56FF">
+            <Poster
+                id="channelBarFavoriteIcon"
+                translation="[4, 4]"
+                width="48"
+                height="48"
+                uri="pkg:/images/favorites.png"
+                blendColor="0x9FB5B0FF"
+                loadDisplayMode="scaleToFit"/>
+        </Rectangle>
+
+        <Rectangle
+            id="channelBarCCBtn"
+            translation="[1420, 10]"
+            width="62"
+            height="56"
+            color="0x3D5C56FF">
+            <Poster
+                id="channelBarCCIcon"
+                translation="[4, 4]"
+                width="54"
+                height="48"
+                uri="pkg:/images/cc.png"
+                blendColor="0x9FB5B0FF"
+                loadDisplayMode="scaleToFit"/>
+        </Rectangle>
+
+        <Rectangle
+            id="channelBarLiveBtn"
+            translation="[1492, 10]"
+            width="104"
+            height="56"
+            color="0x3D5C56FF">
+            <Poster
+                translation="[4, 4]"
+                width="96"
+                height="48"
+                uri="pkg:/images/live.png"
+                blendColor="0xFFFFFFFF"
+                loadDisplayMode="scaleToFit"/>
+        </Rectangle>
+
+        <Rectangle
+            id="channelBarDetailsBtn"
+            translation="[1606, 10]"
+            width="56"
+            height="56"
+            color="0x3D5C56FF">
+            <Poster
+                translation="[4, 4]"
+                width="48"
+                height="48"
+                uri="pkg:/images/info.png"
+                blendColor="0xFFFFFFFF"
+                loadDisplayMode="scaleToFit"/>
+        </Rectangle>
+
     </Rectangle>
-    
+
     <!-- Buffer progress bar -->
     <Rectangle
         id="bufferContainer"
@@ -245,21 +335,18 @@
         height="36"
         color="0x000000FF"
         visible="false">
-        <!-- Track (unloaded) -->
         <Rectangle
             id="bufferTrack"
             translation="[3, 3]"
             width="277"
             height="30"
             color="0x024c48FF"/>
-        <!-- Fill (loaded) -->
         <Rectangle
             id="bufferFill"
             translation="[3, 3]"
             width="0"
             height="30"
-            color="0x8fcdc0FF"/>
-        <!-- Percentage label -->
+            color="0x8fcdc1FF"/>
         <Label
             id="bufferLabel"
             translation="[0, 6]"
@@ -289,60 +376,8 @@
             itemSpacing="[0, 5]"/>
     </Rectangle>
     
-    <Rectangle
-        id="loadingSpinnerContainer"
-        translation="[850, 560]"
-        width="420"
-        height="60"
-        color="0x333333DD"
-        visible="true"> 
-        <Label
-    	    id="loadingSpinnerMessage"
-    	    translation="[0, 0]"
-    	    text="Loading playlist..."
-    	    horizAlign="center"
-    	    vertAlign="center"
-    	    width="420"
-    	    height="60"
-    	    color="0xDDDDDDFF"
-    	    font="font:LargeBoldSystemFont"/>
-    </Rectangle>
-    
-    <!-- Fullscreen failure text - persists after error dismissed -->
-    <Rectangle
-        id="fullscreenFailContainer"
-        translation="[360, 390]"
-        width="1200"
-        height="300"
-        color="0x000000CC"
-        visible="false">
-        <Label
-            id="fullscreenFailTitle"
-            translation="[30, 25]"
-            text="Channel Unavailable"
-            font="font:LargeBoldSystemFont"
-            color="0xFF4444FF"
-            width="1140"/>
-        <Label
-            id="fullscreenFailChannel"
-            translation="[30, 95]"
-            text=""
-            font="font:MediumBoldSystemFont"
-            color="0xFFFFFFFF"
-            width="1140"/>
-        <Label
-            id="fullscreenFailLabel"
-            translation="[30, 145]"
-            text=""
-            font="font:SmallSystemFont"
-            color="0xCCCCCCFF"
-            width="1140"
-            height="130"
-            wrap="true"
-            maxLines="4"/>
-    </Rectangle>
 
-    <!-- Screensaver overlay for inactivity -->
+    <!-- Screensaver / network-down shader overlay -->
     <Rectangle
         id="screensaverOverlay"
         translation="[0, 0]"
@@ -351,19 +386,173 @@
         color="0x000000CC"
         visible="false"/>
 
-    <!-- Invisible focus trap used when error overlay is showing -->
+    <!-- Playlist loading indicator — plain overlay, not a native Dialog.
+         Native Dialog behavior proved unreliable here across both
+         buttonless (leaks all input, no dim) and buttoned (properly modal,
+         but then blocks up/down before any custom key handling can see
+         them) variants. This uses the same proven architecture as
+         reconnectOverlay below: manual dim via screensaverOverlay, manual
+         key handling in onKeyEvent. -->
     <Rectangle
-        id="focusTrap"
+        id="loadingOverlayBorder"
+        translation="[706, 440]"
+        width="508"
+        height="200"
+        color="0x8fcdc1FF"
+        visible="false"/>
+
+    <Rectangle
+        id="loadingOverlay"
+        translation="[710, 444]"
+        width="500"
+        height="192"
+        color="0x024c48FF"
+        visible="false">
+
+        <BusySpinner
+            id="loadingOverlaySpinner"
+            translation="[216, 20]"/>
+
+        <Label
+            id="loadingOverlayLabel"
+            translation="[20, 100]"
+            text="Loading playlist..."
+            font="font:MediumBoldSystemFont"
+            color="0xFFFFFFFF"
+            width="460"
+            height="40"
+            horizAlign="center"/>
+
+        <Label
+            translation="[20, 145]"
+            font="font:SmallSystemFont"
+            color="0xAAAAAAFF"
+            width="460"
+            height="30"
+            horizAlign="center"/>
+    </Rectangle>
+
+    <!-- Reconnecting overlay — shown when stream or network is down and retrying -->
+    <!-- Sits above the screensaver shader -->
+    <!-- Outline border: 4px teal ring -->
+    <Rectangle
+        id="reconnectOverlayBorder"
+        translation="[606, 240]"
+        width="708"
+        height="608"
+        color="0x8fcdc1FF"
+        visible="false"/>
+
+    <Rectangle
+        id="reconnectOverlay"
+        translation="[610, 244]"
+        width="700"
+        height="600"
+        color="0x024c48FF"
+        visible="false">
+
+        <!-- Spinning indicator — centered horizontally -->
+        <BusySpinner
+            id="reconnectSpinner"
+            translation="[316, 30]"
+            visible="true"/>
+
+        <!-- Channel name -->
+        <Label
+            id="reconnectChannelLabel"
+            translation="[30, 120]"
+            text=""
+            font="font:LargeBoldSystemFont"
+            color="0xFFFFFFFF"
+            width="640"
+            height="70"
+            horizAlign="center"
+            wrap="true"
+            maxLines="2"/>
+
+        <!-- Status line (retrying / network down / gave up) -->
+        <Label
+            id="reconnectStatusLabel"
+            translation="[30, 210]"
+            text=""
+            font="font:MediumSystemFont"
+            color="0x8fcdc1FF"
+            width="640"
+            height="50"
+            horizAlign="center"
+            wrap="true"
+            maxLines="2"/>
+
+        <!-- Error reason — shown in gave-up state only. Tall enough that a
+             full "Playback error: ..." message wraps and shows completely
+             instead of clipping. -->
+        <Label
+            id="reconnectErrorLabel"
+            translation="[30, 265]"
+            text=""
+            font="font:SmallSystemFont"
+            color="0xCCCCCCFF"
+            width="640"
+            height="220"
+            horizAlign="center"
+            wrap="true"
+            maxLines="8"
+            visible="false"/>
+
+        <!-- Countdown line — shown during retry loops -->
+        <Label
+            id="reconnectCountdownLabel"
+            translation="[30, 310]"
+            text=""
+            font="font:SmallSystemFont"
+            color="0xAAAAAAFF"
+            width="640"
+            height="35"
+            horizAlign="center"/>
+
+        <!-- Action button — CANCEL while actively loading/retrying, RETRY
+             once the gave-up state is reached (see reconnectActionLabel
+             updates in Overlays.brs). OK does the corresponding action. -->
+        <Rectangle
+            id="reconnectRetryBtn"
+            translation="[225, 510]"
+            width="250"
+            height="40"
+            color="0x8fcdc133">
+            <Label
+                id="reconnectActionLabel"
+                translation="[0, 8]"
+                text="CANCEL"
+                font="font:SmallSystemFont"
+                color="0x8fcdc1FF"
+                width="250"
+                horizAlign="center"/>
+        </Rectangle>
+    </Rectangle>
+
+    <!-- Shades the reconnect dialog itself (not just the background behind
+         it) — starts hidden, shown after 30s of the gave-up state
+         persisting unattended, or 30s into a second+ outage-loop cycle
+         (perpetual retry with no end in sight). Declared after
+         reconnectOverlay/reconnectOverlayBorder so it renders on top of
+         them, unlike screensaverOverlay which only covers the background. -->
+    <Rectangle
+        id="reconnectDialogShade"
         translation="[0, 0]"
-        width="1"
-        height="1"
-        color="0x00000000"
-        visible="true"
-        focusable="true"/>
+        width="1920"
+        height="1080"
+        color="0x000000CC"
+        visible="false"/>
 
     <get_channel_list
     	id="get_channel_list"
     	control="STOP"/>
-    	
+
+    <ManifestPatcher
+        id="manifestPatcher"/>
+
+    <LocalProxy
+        id="localProxy"/>
+
 </children>
 </component>

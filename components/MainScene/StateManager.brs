@@ -2,85 +2,70 @@
 ' Persists and restores the last-viewed playlist and channel
 ' using roRegistrySection so selections survive app restarts.
 
+function LAST_STATE_REG_SECTION() as String
+    return "lastState"
+end function
+
 sub saveLastState()
-    print ">>> SAVE STATE: Saving current state"
-
-    reg = CreateObject("roRegistrySection", "lastState")
-
+    reg = CreateObject("roRegistrySection", LAST_STATE_REG_SECTION())
     reg.Write("playlistIndex", m.currentPlaylist.ToStr())
-
     if m.flatChannelList <> invalid and m.currentChannelIndex >= 0 and m.currentChannelIndex < m.flatChannelList.Count() then
         channel = m.flatChannelList[m.currentChannelIndex]
         if channel <> invalid and channel.url <> invalid then
-            reg.Write("channelUrl", channel.url)
-            reg.Write("channelTitle", channel.title)
-            print ">>> SAVE STATE: Channel saved = "; channel.title
+            reg.Write("channelUrl",   channel.url)
+            reg.Write("channelTitle", cleanChannelTitle(channel))
         end if
     end if
-
-    reg.Write("channelIndex", m.currentChannelIndex.ToStr())
+    ' Persist previous channel for instant-replay across reboots
+    if m.flatChannelList <> invalid and m.previousChannelIndex >= 0 and m.previousChannelIndex < m.flatChannelList.Count() then
+        prevChannel = m.flatChannelList[m.previousChannelIndex]
+        if prevChannel <> invalid and prevChannel.url <> invalid then
+            reg.Write("previousChannelUrl", prevChannel.url)
+        else
+            reg.Delete("previousChannelUrl")
+        end if
+    else
+        reg.Delete("previousChannelUrl")
+    end if
     reg.Flush()
-    print ">>> SAVE STATE: Successfully saved state"
 end sub
 
 function loadLastState() as Object
-    print ">>> LOAD STATE: Loading saved state"
-
-    state = {
-        playlistIndex: 0,
-        channelUrl: "",
-        channelTitle: "",
-        channelIndex: 0
-    }
-
-    reg = CreateObject("roRegistrySection", "lastState")
-
-    if reg.Exists("playlistIndex") then
-        state.playlistIndex = reg.Read("playlistIndex").ToInt()
-        print ">>> LOAD STATE: playlistIndex = "; state.playlistIndex
-    end if
-
-    if reg.Exists("channelUrl") then
-        state.channelUrl = reg.Read("channelUrl")
-        print ">>> LOAD STATE: channelUrl = "; state.channelUrl
-    end if
-
-    if reg.Exists("channelTitle") then
-        state.channelTitle = reg.Read("channelTitle")
-        print ">>> LOAD STATE: channelTitle = "; state.channelTitle
-    end if
-
-    if reg.Exists("channelIndex") then
-        state.channelIndex = reg.Read("channelIndex").ToInt()
-        print ">>> LOAD STATE: channelIndex = "; state.channelIndex
-    end if
-
+    state = { playlistIndex: 0, channelUrl: "", channelTitle: "", previousChannelUrl: "" }
+    reg   = CreateObject("roRegistrySection", LAST_STATE_REG_SECTION())
+    if reg.Exists("playlistIndex")       then state.playlistIndex       = reg.Read("playlistIndex").ToInt()
+    if reg.Exists("channelUrl")          then state.channelUrl          = reg.Read("channelUrl")
+    if reg.Exists("channelTitle")        then state.channelTitle        = reg.Read("channelTitle")
+    if reg.Exists("previousChannelUrl")  then state.previousChannelUrl  = reg.Read("previousChannelUrl")
     return state
 end function
 
 sub restorePendingChannel()
     if m.pendingChannelUrl = invalid or m.pendingChannelUrl = "" then return
-
-    print ">>> RESTORE: Finding pending channel: "; m.pendingChannelUrl
-
-    for i = 0 to m.flatChannelList.Count() - 1
-        channel = m.flatChannelList[i]
-        if channel <> invalid and channel.url = m.pendingChannelUrl then
-            m.currentChannelIndex = i
-            m.lastFocusedChannel = i
-
-            if m.channelList <> invalid then
-                m.channelList.jumpToItem = i
+    i = findChannelIndexByUrl(m.pendingChannelUrl)
+    if i >= 0 then
+        m.currentChannelIndex = i
+        if m.channelList <> invalid then m.channelList.jumpToItem = i
+        ' Restore previous channel index for instant replay
+        ' Only set if it's a different channel and valid
+        if m.pendingPreviousChannelUrl <> invalid and m.pendingPreviousChannelUrl <> "" then
+            prevIdx = findChannelIndexByUrl(m.pendingPreviousChannelUrl)
+            if prevIdx >= 0 and prevIdx <> i then
+                m.previousChannelIndex = prevIdx
+                print ">>> STATE: Restored previousChannelIndex="; prevIdx; " ("; m.pendingPreviousChannelUrl; ")"
             end if
-
-            playPreviewChannel(i)
-
-            print ">>> RESTORE: Channel found and selected in index "; i
-            m.pendingChannelUrl = invalid
-            return
+            m.pendingPreviousChannelUrl = invalid
         end if
-    end for
-
-    print ">>> RESTORE: No channel found, defaulting to first channel"
+        if m.initialLaunch then
+            ' First load after app start — go straight to fullscreen
+            m.initialLaunch = false
+            _launchFullscreen(i)
+        else
+            playPreviewChannel(i)
+        end if
+        m.pendingChannelUrl = invalid
+        return
+    end if
     m.pendingChannelUrl = invalid
+    m.pendingPreviousChannelUrl = invalid
 end sub

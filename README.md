@@ -6,18 +6,18 @@ SelectaVue manages and plays M3U playlists with a clean, fast interface built fo
 
 - **Multiple M3U playlists** — Save and quickly switch between multiple playlist URLs
 - **Channel grid** — Browse channels organized by category with section headers
-- **Category jumping** — Use Fast Forward / Rewind to jump between categories instantly
+- **Page up/down** — Use Fast Forward / Rewind to jump between categories instantly
 - **Preview** — Preview channels before launching in full screen
 - **Quick menu** — Press ← while watching to browse all channels without pausing video
 - **Channel surf** — Switch channels up/down while in fullscreen
-- **Mute toggle** — Press → to mute or unmute preview and fullscreen audio; mute icon appears on screen
-- **Audio options** — Change the audio track or language during playback
+- **Reload/Jump to live** — Press → to reload the stream, or jump to live if stream was paused
 - **Subtitles** — Turn subtitles on/off when available
 - **Full screen** — 1920×1080 video without letterboxing
-- **Multi-format** — HLS, MP4, MKV, AVI and more than 20 formats supported
-- **Smart buffering** — Loading progress bar shown during buffering in both grid and fullscreen; automatic retry with lower bitrate if stream stalls
+- **Multi-format** — HLS, MP4, DASH, TS, and more; format auto-detected from stream URL
+- **Smart buffering** — Loading progress bar shown during buffering; automatic multi-step retry with progressively lower bitrate; proactive bandwidth step-down when buffer is sluggish
+- **Manifest patching** — Automatically fixes common HLS manifest problems (missing bitrate info, flat manifests, LL-HLS markers) that cause streams to fail on Roku but work in VLC
+- **Per-stream headers** — Reads `#EXTVLCOPT` User-Agent and Referrer overrides from M3U playlists so streams that require specific headers play correctly
 - **Error reporting** — Friendly error messages with channel name and description of the problem
-- **Clock** — Current time displayed alongside channel info
 
 ## 📥 Installation
 
@@ -40,12 +40,12 @@ https://developer.roku.com/dev/docs/developer-setup
 | ------------------- | --------------------------------------------------- |
 | **↑↓**              | Browse channels                                     |
 | **←**               | Switch to playlist menu                             |
-| **→**               | Mute / unmute preview audio                         |
+| **→**               | Go fullscreen with the previewing channel           |
 | **OK** (once)       | Load selected channel in preview window             |
 | **OK** (twice)      | Go fullscreen with the previewing channel           |
 | **⏪ Rewind**       | Page up                                             |
 | **⏩ Fast Forward** | Page down                                           |
-| **Instant Replay**  | Reload current preview channel                      |
+| **Instant Replay**  | Jump to previously view channel, does not start     |
 
 > **Tip:** Channels with multiple categories will appear in each of their categories.
 
@@ -53,15 +53,13 @@ https://developer.roku.com/dev/docs/developer-setup
 
 | Button              | Action                                              |
 | ------------------- | --------------------------------------------------- |
-| **OK**              | Open options menu (audio, subtitles, info)          |
+| **OK**              | Open channel bar                                |
 | **Play/Pause**      | Pause or resume video                               |
 | **↑**               | Channel surf to previous channel                    |
 | **↓**               | Channel surf to next channel                        |
-| **⏪ Rewind**       | Page up                                             |
-| **⏩ Fast Forward** | Page down                                           |
 | **←**               | Show quick menu (video continues playing)           |
-| **→**               | Mute / unmute audio                                 |
-| **Instant Replay**  | Reload the current channel                          |
+| **→**               | Reload the current channel                          |
+| **Instant Replay**  | Switch to previous channel                          |
 | **Back**            | Return to grid (video continues in preview)         |
 
 > **Tip:** Channels are cyclical — the last one connects back to the first.
@@ -78,12 +76,12 @@ https://developer.roku.com/dev/docs/developer-setup
 | **OK**              | Switch to selected channel                          |
 | **← or →**          | Close quick menu                                    |
 
-### Options menu (press OK while in fullscreen)
+### Channel bar (press OK while in fullscreen)
 
-- 🔊 **Change Audio** — Select the audio track or language
+- ⭐ **Favorites** — Add/remove channel from favorites list
 - 💬 **Subtitles** — Turn subtitles on or off
 - ℹ️ **Channel Info** — Display information about the current channel
-- ❌ **Close** — Close the options menu
+- 🎬 **Live** — Reload/jumps to live video
 
 ## 📺 Playlists
 
@@ -100,8 +98,6 @@ Use your own M3U playlist or your IPTV provider's URL.
 - 🇨🇦 Canada
 - 🇦🇺 Australia
 - 🇬🇧 United Kingdom
-- 🇯🇵 Japan
-- 🇰🇷 Korea
 
 ### Add a custom playlist
 1. Select **➕ Add List** in the playlist menu
@@ -110,6 +106,7 @@ Use your own M3U playlist or your IPTV provider's URL.
 4. Your list will appear in the menu immediately
 
 **Playlist resources:**
+- [M3U.cl](https://m3u.cl/) — Listings by country
 - [IPTV-ORG](https://github.com/iptv-org/iptv) — Global collection
 
 ## 🔧 Troubleshooting
@@ -140,8 +137,9 @@ telnet YOUR_ROKU_IP 8085
 
 ## 📋 Version
 
-- **Current version:** 1.1.3
-- **Last updated:** Jun 19, 2026
+- **Current version:** 1.2.3
+- **Last updated:** Jun 24, 2026
+
 
 ## 📄 Legal
 

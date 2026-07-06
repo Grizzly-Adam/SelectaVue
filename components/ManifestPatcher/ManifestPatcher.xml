@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component name="ManifestPatcher" extends="Task">
+    <interface>
+        <field id="url"       type="string" value=""/>
+        <field id="userAgent" type="string" value=""/>
+        <field id="referrer"  type="string" value=""/>
+        <field id="result"    type="assocarray"/>
+        <field id="sessionSlot" type="integer" value="0"/>
+    </interface>
+    <script type="text/brightscript" uri="pkg:/components/ManifestPatcher/ManifestPatcher.brs"/>
+    <script type="text/brightscript" uri="pkg:/components/ManifestPatcher/ManifestPatcherHelpers.brs"/>
+</component>

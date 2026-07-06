@@ -1,10 +1,25 @@
 title=SelectaVue
 major_version=1
-minor_version=1
-build_version=3
+minor_version=5
+build_version=208
+
+# SceneGraph version - required for Roku OS 9.0+ performance and memory optimizations
+# rsg_version=1.1 is no longer supported as of Roku OS 14.5
+rsg_version=1.2
+
+# Icons
 mm_icon_focus_hd=pkg:/images/icon_focus_hd.png
+
+# Splash screen
 splash_screen_fhd=pkg:/images/splash_fhd.png
 splash_color=#024c48
 splash_min_time=2000
+
+# Resolution - FHD only (1920x1080)
 ui_resolutions=fhd
+
+# Deep linking support
 supports_input_launch=1
+
+# OK button handling
+confirm_partner_button=1
