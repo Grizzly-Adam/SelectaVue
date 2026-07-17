@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 200 200"
+   version="1.1"
+   id="svg9"
+   sodipodi:docname="icon_music.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs9" />
+  <sodipodi:namedview
+     id="namedview9"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="3.055"
+     inkscape:cx="100"
+     inkscape:cy="100"
+     inkscape:window-width="1600"
+     inkscape:window-height="824"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg9" />
+  <rect
+     width="200"
+     height="200"
+     fill="#024c48"
+     id="rect1" />
+  <!-- Record outer -->
+  <circle
+     cx="98"
+     cy="108"
+     r="78"
+     fill="#F4F0E4"
+     id="circle1" />
+  <!-- Groove rings -->
+  <circle
+     cx="98"
+     cy="108"
+     r="70"
+     fill="none"
+     stroke="#8fcdc1"
+     stroke-width="3"
+     id="circle2" />
+  <circle
+     cx="98"
+     cy="108"
+     r="59"
+     fill="none"
+     stroke="#8fcdc1"
+     stroke-width="3"
+     id="circle3" />
+  <circle
+     cx="98"
+     cy="108"
+     r="48"
+     fill="none"
+     stroke="#8fcdc1"
+     stroke-width="3"
+     id="circle4" />
+  <!-- Label -->
+  <circle
+     cx="98"
+     cy="108"
+     r="30"
+     fill="#E85D3A"
+     id="circle5" />
+  <!-- Spindle hole -->
+  <circle
+     cx="98"
+     cy="108"
+     r="5"
+     fill="#024c48"
+     id="circle6" />
+  <!-- Tone arm pivot -->
+  <!-- Tone arm body -->
+  <!-- Needle head -->
+  <g
+     id="g9"
+     transform="rotate(32.445651,135.27094,42.007895)">
+    <circle
+       cx="178"
+       cy="24"
+       r="11"
+       fill="#8fcdc1"
+       id="circle7" />
+    <line
+       x1="178"
+       y1="24"
+       x2="136"
+       y2="68"
+       stroke="#e8b84b"
+       stroke-width="7"
+       stroke-linecap="round"
+       id="line7" />
+    <circle
+       cx="136"
+       cy="68"
+       r="6"
+       fill="#024c48"
+       id="circle8" />
+    <circle
+       cx="136"
+       cy="68"
+       r="3"
+       fill="#e8b84b"
+       id="circle9" />
+  </g>
+</svg>

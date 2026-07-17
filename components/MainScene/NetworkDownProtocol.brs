@@ -1,14 +1,10 @@
 ' ==================== NetworkDownProtocol.brs ====================
-' Entered when the device has no network connection at all (detected
-' either up front or mid-retry). Polls every 10 seconds until connectivity
-' returns, then resets the retry ladder state and attempts a clean reload.
-
-' ---------- Network down protocol ----------
+' Entered when the device has no network connection. Polls every 10 seconds
+' until connectivity returns, then resets ladder state and retries.
 
 sub _enterNetworkWait()
     cancelStreamRetryTimer()
     cancelCountdownTickTimer()
-    ' Shader on for network-down
     if m.screensaverOverlay <> invalid then m.screensaverOverlay.visible = true
     _showReconnectOverlay(true)   ' sets m.reconnectState = "network"
     _startNetworkPollTimer(10)
@@ -31,24 +27,30 @@ sub onNetworkPollFired()
         _startNetworkPollTimer(10)
     else
         print ">>> NETWORK: Connection restored"
-        m.reconnectState = "idle"
-        ' Reset retry state so ladder starts fresh
+        m.reconnectState         = "idle"
         m.retryCount             = 0
         m.cacheWasAttempted      = false
-        m.bandwidthProbeIndex    = 0
         m.manifestPatchAttempted = false
         m.isNimbleStream         = false
-        ' Attempt reload
+        m.proxyOriginalUrl       = ""
+        ' Stop any stale proxy — connection was lost so its session is dead.
+        ' Bug F fix: outage loop does this, network restore must too.
+        if m.localProxy <> invalid and m.localProxy.status <> "idle" and m.localProxy.status <> "stopped" then
+            print ">>> NETWORK: Stopping stale proxy before reload"
+            m.localProxy.stopProxy = true
+        end if
         updateReconnectStatus("Network restored — reconnecting...")
         updateReconnectCountdown("")
         cancelCountdownTickTimer()
 
         channel = _currentChannel()
 
-        if m.lastWorkingContent <> invalid then
+        ' Use channel.url, not lastWorkingContent — proxy channels have a
+        ' session-specific proxy URL in lastWorkingContent that is useless
+        ' after a network outage and causes the cache lookup to miss.
+        ' Bug F fix: same root cause as PATH E in outage loop.
+        if channel <> invalid then
             m.pendingHeaders = _resolveHeaders(channel)
-            _applyContentAndPlay(m.lastWorkingContent)
-        else if channel <> invalid then
             freshContent = _makeContentNode(channel.url, channel.title, channel)
             _applyContentAndPlay(freshContent)
         else

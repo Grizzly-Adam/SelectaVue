@@ -25,12 +25,13 @@ sub onBufferingStatus()
         _startNamedTimer("stallTimer", 20.0, false, "onBufferStall")
     end if
 
-    ' Soft step-down — sustained low buffer
+    ' Soft step-down — sustained low buffer.
+    ' Avoid creating roDateTime objects when not needed (called at high frequency).
     if pct > 0 and pct < 50 and m.previewVideo.state = "buffering" then
         if m.slowBufferStartTime = invalid then
             m.slowBufferStartTime = CreateObject("roDateTime")
         else
-            now     = CreateObject("roDateTime")
+            now     = CreateObject("roDateTime")   ' only created when timer is running
             elapsed = now.AsSeconds() - m.slowBufferStartTime.AsSeconds()
             if elapsed >= 15 then
                 m.slowBufferStartTime = CreateObject("roDateTime")

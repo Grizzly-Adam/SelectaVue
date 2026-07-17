@@ -6,11 +6,19 @@
 ' that file runs in a separate Task node and cannot share this scope.
 
 ' Returns the number of built-in (non-deletable) playlists.
-' Defined as a function rather than a file-scope variable because BrightScript
-' SceneGraph components do not support file-scope variable assignments.
-' UPDATE the return value if you add or remove built-in playlists.
+' Derived from m.playlists' isDefault flags rather than a hardcoded number,
+' so it can never drift out of sync with loadSavedPlaylists() again — add or
+' remove a built-in entry there and this just reflects it automatically.
+' Returns 0 if m.playlists hasn't been populated yet (loadSavedPlaylists()
+' always pushes built-ins first, so this is safe to call any time after that).
 function BUILTIN_PLAYLIST_COUNT() as Integer
-    return 7
+    count = 0
+    if m.playlists <> invalid then
+        for each pl in m.playlists
+            if pl.isDefault = true then count = count + 1
+        end for
+    end if
+    return count
 end function
 
 ' Inline ternary helper — BrightScript has no ?: operator.
@@ -286,6 +294,201 @@ function _channelLogoUrl(channel as Object) as String
     return ""
 end function
 
+' ---------- Playlist-switch channel continuity ("Now Playing" pin) ----------
+' m.currentChannelIndex is an index into m.flatChannelList, which is rebuilt
+' from scratch every time a playlist loads. If a channel is actively playing
+' when the user picks a different playlist (or reloads the current one) from
+' the side panel, that index becomes meaningless the moment the new list is
+' built.
+'
+' _resyncOrPinChannelAfterPlaylistSwitch() (called from SetContent(), AFTER
+' the new playlist's normal buildFlatChannelList() pass) handles this two ways:
+'   - If the same channel/URL is already naturally present in the new
+'     playlist (e.g. it happens to exist in both), just point
+'     currentChannelIndex at that existing entry. No duplicate row, so no
+'     risk of the same channel showing up starred twice.
+'   - Otherwise, pin a copy of it under a real "Now Playing" SECTION node
+'     APPENDED at the very END of the grid (last child, not first). It MUST
+'     carry contenttype="SECTION" (and an id) exactly like every real
+'     category node does (see buildSortedChannelTree() in PlaylistSort.brs)
+'     -- LabelList uses that field, not "has children", to tell a section
+'     header apart from a plain leaf row.
+'
+'     It goes at the END specifically so it can later be removed cleanly:
+'     removing/inserting at the FRONT shifts every other index down/up by
+'     one, and several callers (changeChannel()'s surf-dwell capture,
+'     checkState()'s playingPreviewIndex/loadingChannelIndex bookkeeping in
+'     ChannelNav.brs) grab an index before calling into
+'     playChannel()/playPreviewChannel() and use it after -- an earlier
+'     front-inserted version of this corrupted m.previousChannelIndex and
+'     broke the flashback/replay button. Appending at the tail means
+'     removing it later only invalidates indices that were already pointing
+'     AT it (which safely no-op via the existing ">= Count()" guards
+'     elsewhere) and leaves every other index's meaning completely
+'     unaffected.
+' Once pinned, m.currentChannelIndex points at a real channel node with real
+' title/url/description/logo -- so the channel bar, preview name/logo, and
+' favorite toggle all keep working completely unchanged, with no fallback
+' special-casing needed anywhere else.
+'
+' The pin is removed outright the instant the user actually tunes to a
+' DIFFERENT channel -- see _clearNowPlayingPinIfChanging(), called from
+' playChannel()/playPreviewChannel() in VideoCore.brs -- so nothing from the
+' previous playlist lingers once you've moved on.
+
+' Captures the channel to carry over BEFORE a playlist switch. Deliberately
+' prefers m.loadingChannelIndex (the channel currently being tuned to, set
+' the instant a load starts) over m.playingPreviewIndex (the last one that
+' actually reached "playing"), over m.currentChannelIndex. If the user just
+' changed channel and it's still buffering when the playlist switch happens,
+' playingPreviewIndex is still the PREVIOUS channel — checkState() hasn't
+' fired "playing" for the new one yet — so preferring it would capture the
+' wrong (stale, already-left) channel instead of the one actually being
+' tuned to. loadingChannelIndex is also preferred over currentChannelIndex
+' for a related but separate reason -- while browsing the grid (not
+' fullscreen), m.currentChannelIndex also doubles as the grid CURSOR
+' position (onChannelFocused() in ChannelSelection.brs updates it on every
+' highlight move), which can differ from what's actually loading/playing in
+' the preview window if the user moved the highlight after selecting a
+' channel without picking a new one. Capturing the cursor position instead
+' of what's really playing showed the wrong channel (or no pin at all, if
+' the highlighted channel happened to exist in the destination playlist)
+' after switching back. GridInput.brs already has to re-sync
+' currentChannelIndex from playingPreviewIndex for the same reason in a
+' couple of places.
+sub _captureChannelBeforePlaylistSwitch()
+    m.channelBeforePlaylistSwitch = invalid
+    idx = m.loadingChannelIndex
+    if idx = invalid or idx < 0 then idx = m.playingPreviewIndex
+    if idx = invalid or idx < 0 then idx = m.currentChannelIndex   ' nothing loaded/confirmed yet -- best guess
+    if m.flatChannelList <> invalid and idx >= 0 and idx < m.flatChannelList.Count() then
+        channel = m.flatChannelList[idx]
+        if channel <> invalid and channel.url <> invalid and channel.url <> "" then
+            m.channelBeforePlaylistSwitch = channel
+        end if
+    end if
+end sub
+
+' Called from SetContent() right after the new playlist's own
+' buildFlatChannelList() pass. Returns the grid index the channel list
+' should jump to (0 if there's nothing special to restore). Always consumes
+' (clears) m.channelBeforePlaylistSwitch, and always resets any stale pin
+' bookkeeping left over from a previous load first.
+'
+' Also re-points m.playingPreviewIndex and m.loadingChannelIndex at the same
+' resolved index, not just m.currentChannelIndex -- GridInput.brs uses
+' playingPreviewIndex to re-correct currentChannelIndex back to "what's
+' actually playing" when you press back/right on the grid (see the comment
+' on _captureChannelBeforePlaylistSwitch() above for why that variable
+' exists). Left stale after a switch, it points at some unrelated channel in
+' the new list and clobbers the very index we just fixed the moment the user
+' presses one of those keys.
+function _resyncOrPinChannelAfterPlaylistSwitch() as Integer
+    m.pinnedNowPlayingUrl      = invalid
+    m.pinnedNowPlayingNode     = invalid
+    m.replayFallbackActive = false   ' fresh playlist -- start the replay toggle clean
+
+    channel = m.channelBeforePlaylistSwitch
+    m.channelBeforePlaylistSwitch = invalid
+    if channel = invalid or channel.url = invalid or channel.url = "" then return 0
+
+    ' Already naturally in the new playlist -- just point at it, no pin needed.
+    existingIdx = findChannelIndexByUrl(channel.url)
+    if existingIdx >= 0 then
+        m.currentChannelIndex  = existingIdx
+        m.previousChannelIndex = -1
+        m.playingPreviewIndex  = existingIdx
+        m.loadingChannelIndex  = existingIdx
+        print ">>> NAV: Playlist switch -- "; channel.url; " already present in new playlist at "; existingIdx
+        return existingIdx
+    end if
+
+    if m.allChannels = invalid then return 0
+
+    pinIdx = _pinChannelAsNowPlaying(channel)
+    m.previousChannelIndex = -1
+    print ">>> NAV: Playlist switch -- pinned now-playing channel under a Now Playing section at tail index "; pinIdx; " ("; channel.url; ")"
+    return pinIdx
+end function
+
+' Pins `channel` as a "Now Playing" tail section in m.allChannels/
+' m.flatChannelList when it isn't naturally present there, pointing all the
+' "what's currently playing" index bookkeeping at it (currentChannelIndex,
+' playingPreviewIndex, loadingChannelIndex — see the comment on
+' _resyncOrPinChannelAfterPlaylistSwitch() above for why those three all need
+' to agree). Shared by that playlist-switch resync and by hiding the
+' currently-playing channel (toggleHideForCurrentChannel() in
+' HiddenChannels.brs) — same underlying problem: a channel that needs to
+' keep playing/surfing correctly even though it just dropped out of the
+' displayed tree. Cleared later by _clearNowPlayingPinIfChanging() once the
+' user tunes away. Returns the new pin index, or -1 if there's nothing to pin.
+function _pinChannelAsNowPlaying(channel as Object) as Integer
+    if m.allChannels = invalid or channel = invalid or channel.url = invalid or channel.url = "" then return -1
+
+    pinSection             = CreateObject("roSGNode", "ContentNode")
+    pinSection.contenttype = "SECTION"
+    pinSection.title       = "Now Playing"
+    pinSection.id          = "now_playing_pin"
+    pin                    = pinSection.CreateChild("ContentNode")
+    pin.title              = channel.title
+    pin.url                = channel.url
+    if channel.description <> invalid then pin.description = channel.description
+    if channel.baseTitle   <> invalid then pin.baseTitle   = channel.baseTitle
+    if channel.group       <> invalid then pin.group       = channel.group
+    m.allChannels.AppendChild(pinSection)   ' tail, not front -- see comment above
+    buildFlatChannelList()                  ' rebuild so the pin (now last) is included
+
+    m.pinnedNowPlayingUrl  = channel.url
+    m.pinnedNowPlayingNode = pinSection
+    pinIdx                 = m.flatChannelList.Count() - 1
+    m.currentChannelIndex  = pinIdx
+    m.playingPreviewIndex  = pinIdx
+    m.loadingChannelIndex  = pinIdx
+    return pinIdx
+end function
+
+' Called once the user has actually tuned away from the pinned channel.
+' Because the pin sits at the TAIL of the list (see comment above), removing
+' it only invalidates indices that were pointing AT it -- which safely no-op
+' via the existing ">= Count()" guards in jumpToPreviousChannel()/
+' GridInput.brs/ChannelBar.brs etc -- rather than shifting every other
+' index's meaning the way a front-removal did. No-op if there's no pin, or
+' if newUrl IS the pin (re-selecting what's already playing isn't a change).
+sub _clearNowPlayingPinIfChanging(newUrl as String)
+    if m.pinnedNowPlayingUrl = invalid then return
+    if newUrl = m.pinnedNowPlayingUrl then return
+
+    ' Capture what's focused now (the channel the user just clicked) before
+    ' touching anything -- the pin sat at the TAIL, so removing it doesn't
+    ' shift anything before it, and this index is still correct once the
+    ' list is rebuilt.
+    focusedBefore = -1
+    if m.channelList <> invalid then focusedBefore = m.channelList.itemFocused
+
+    if m.allChannels <> invalid and m.pinnedNowPlayingNode <> invalid then
+        m.allChannels.removeChild(m.pinnedNowPlayingNode)
+    end if
+    m.pinnedNowPlayingUrl  = invalid
+    m.pinnedNowPlayingNode = invalid
+    buildFlatChannelList()
+
+    if m.channelList <> invalid then
+        ' Reassigning .content resets a LabelList's focus/scroll to the top.
+        ' jumpToItem alone right after wasn't reliable on-device -- setting
+        ' content to invalid first, then back, then setting BOTH
+        ' itemFocused and jumpToItem is the same repaint-while-preserving-
+        ' focus pattern _bounceListContent() already uses elsewhere in this
+        ' codebase (see Favorites.brs).
+        m.channelList.content = invalid
+        m.channelList.content = m.allChannels
+        if focusedBefore >= 0 and m.flatChannelList <> invalid and focusedBefore < m.flatChannelList.Count() then
+            m.channelList.itemFocused = focusedBefore
+            m.channelList.jumpToItem  = focusedBefore
+        end if
+    end if
+    print ">>> NAV: Now-playing pin removed -- tuning to a different channel"
+end sub
+
 ' Starts the LocalProxy task for a session-token or HLS-v7+ stream.
 ' Waits for any previous proxy thread to release port 7171 first.
 ' Called from RetryLadder (cache fast-path) and ManifestCallbacks (patcher result).
@@ -293,6 +496,13 @@ sub _startLocalProxy(masterUrl as String, pendingContent as Object)
     if masterUrl = invalid or masterUrl = "" then
         print ">>> PROXY: ERROR -- _startLocalProxy called with empty masterUrl"
         return
+    end if
+    ' Set a content node on the Video node with the channel URL so that
+    ' retryStream() has a valid base URL if the proxy fails before playing.
+    ' Without this, previewVideo.content is stale (previous channel) and
+    ' cleanUrl resolution would use the wrong URL.
+    if m.previewVideo <> invalid and pendingContent <> invalid then
+        m.previewVideo.content = pendingContent
     end if
     if m.localProxy = invalid then
         print ">>> PROXY: ERROR -- localProxy node is invalid"
@@ -321,91 +531,16 @@ sub _startLocalProxy(masterUrl as String, pendingContent as Object)
     print ">>> PROXY: UA="; headers.ua
 end sub
 
-' ==================== Icon Helpers ====================
 
-' Wraps an image URL through images.weserv.nl at w=400 for reliable loading.
-' Only applies to http/https URLs; pkg: and other local schemes pass through.
-' Strips the scheme prefix that weserv requires (it adds its own https://).
-function _resizedIconUrl(url as String) as String
-    if url = invalid or url = "" then return url
-    lurl = LCase(url)
-    if Left(lurl, 7) = "http://" then
-        ' weserv needs the URL without scheme
-        return "https://images.weserv.nl/?url=" + Mid(url, 8) + "&w=400"
-    else if Left(lurl, 8) = "https://" then
-        return "https://images.weserv.nl/?url=" + Mid(url, 9) + "&w=400"
-    end if
-    return url  ' pkg:, tmp:, etc. pass through unchanged
+' Returns the URL of the channel currently being loaded (m.loadingChannelIndex),
+' or "" if none. Used to detect stale state callbacks from abandoned channels.
+' For proxy channels, returns m.proxyOriginalUrl (the original stream URL)
+' since previewVideo.content.url is the proxy URL http://IP:7171/master.
+function _currentLoadingChannelUrl() as String
+    if m.flatChannelList = invalid then return ""
+    if m.loadingChannelIndex < 0 or m.loadingChannelIndex >= m.flatChannelList.Count() then return ""
+    ch = m.flatChannelList[m.loadingChannelIndex]
+    if ch = invalid or ch.url = invalid then return ""
+    if m.proxyOriginalUrl <> "" then return m.proxyOriginalUrl
+    return ch.url
 end function
-
-' Returns the best icon URL for a channel:
-'   1. Channel's own tvg-logo (resized through weserv)
-'   2. Category icon matched from channel group name
-'   3. General fallback icon
-function _bestIconUrl(channel as Object) as String
-    ' Try the channel's own logo first
-    logoUrl = _channelLogoUrl(channel)
-    if logoUrl <> "" then return _resizedIconUrl(logoUrl)
-
-    ' Fall back to category icon based on group name
-    return _categoryIconUrl(channel)
-end function
-
-' Maps a channel's group name to a category icon pkg: path.
-' Falls back to general icon if no match.
-function _categoryIconUrl(channel as Object) as String
-    group = ""
-    if channel <> invalid and channel.group <> invalid then
-        group = LCase(channel.group)
-    end if
-
-    ' Category keyword matching (order matters -- more specific first)
-    if group.InStr("anime") >= 0 then
-        return "pkg:/images/icon_anime.svg"
-    else if group.InStr("cartoon") >= 0 or group.InStr("animation") >= 0 then
-        return "pkg:/images/icon_cartoons.svg"
-    else if group.InStr("kids") >= 0 or group.InStr("children") >= 0 or group.InStr("family") >= 0 then
-        return "pkg:/images/icon_kids.svg"
-    else if group.InStr("comedy") >= 0 or group.InStr("humor") >= 0 or group.InStr("funny") >= 0 then
-        return "pkg:/images/icon_comedy.svg"
-    else if group.InStr("sitcom") >= 0 then
-        return "pkg:/images/icon_sitcoms.svg"
-    else if group.InStr("sport") >= 0 or group.InStr("football") >= 0 or group.InStr("soccer") >= 0 or group.InStr("cricket") >= 0 or group.InStr("basketball") >= 0 or group.InStr("baseball") >= 0 then
-        return "pkg:/images/icon_sports.svg"
-    else if group.InStr("weather") >= 0 or group.InStr("climate") >= 0 then
-        return "pkg:/images/icon_weather.svg"
-    else if group.InStr("edu") >= 0 or group.InStr("learn") >= 0 or group.InStr("school") >= 0 or group.InStr("document") >= 0 or group.InStr("science") >= 0 or group.InStr("history") >= 0 then
-        return "pkg:/images/icon_educational.svg"
-    else if group.InStr("network") >= 0 or group.InStr("broadcast") >= 0 or group.InStr("news") >= 0 or group.InStr("general") >= 0 then
-        return "pkg:/images/icon_network.svg"
-    end if
-
-    ' General fallback
-    return "pkg:/images/icon_general.svg"
-end function
-
-' Called when the channel bar logo Poster finishes loading.
-' If the image failed (broken URL, network error), fall back to the category icon.
-sub onChannelBarLogoStatus()
-    if m.channelBarLogo = invalid then return
-    status = m.channelBarLogo.loadStatus
-    if status = "failed" then
-        channel = _currentChannel()
-        fallback = _categoryIconUrl(channel)
-        print ">>> ICON: channelBarLogo failed, falling back to "; fallback
-        m.channelBarLogo.uri = fallback
-    end if
-end sub
-
-' Called when the preview logo Poster finishes loading.
-' If the image failed, fall back to the category icon.
-sub onPreviewLogoStatus()
-    if m.previewChannelLogo = invalid then return
-    status = m.previewChannelLogo.loadStatus
-    if status = "failed" then
-        channel = _currentChannel()
-        fallback = _categoryIconUrl(channel)
-        print ">>> ICON: previewChannelLogo failed, falling back to "; fallback
-        m.previewChannelLogo.uri = fallback
-    end if
-end sub

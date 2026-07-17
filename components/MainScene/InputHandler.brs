@@ -26,7 +26,7 @@
 '   options (*) → toggle favorite on current channel
 '   play        → pause / resume (unaffected by the bar)
 '   replay      → jump to previously watched channel (unaffected by the bar)
-'   (auto-hides after 5s of no input; bar and quick channel menu are mutually exclusive)
+'   (auto-hides after 4s of no input; bar and quick channel menu are mutually exclusive)
 '
 ' GRID (channel list focused):
 '   back        → return to playing preview channel (if not already there); else open playlist panel
@@ -62,6 +62,7 @@
 function onKeyEvent(key as String, press as Boolean) as Boolean
     result = false
     if not press then return result
+    print ">>> KEY: "; key; " isPlayingVideo="; m.isPlayingVideo; " currentChannelIndex="; m.currentChannelIndex
 
     ' Network lockout — all input blocked while waiting for network
     if m.reconnectState = "network" then return true
@@ -74,6 +75,11 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
     ' onChannelFocused/onPlaylistSelected/onPlaylistFocused since a focused
     ' LabelList consumes those natively before they'd ever reach here.
     if m.loadingDialogVisible and not m.isPlayingVideo then
+        if m.suppressLoadingDialogDismissOnce then
+            m.suppressLoadingDialogDismissOnce = false
+            print ">>> LOADDLG: onKeyEvent -- suppressing dismiss for key="; key; " (trailing echo of the press that just started the load)"
+            return true
+        end if
         if key = "OK" or key = "back" then
             _dismissLoadingDialogForInput()
             return true
@@ -115,7 +121,10 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
     ' Gave-up state — OK retries, up/down/right/back work normally, everything else consumed
     if m.reconnectState = "gaveup" then
         if key = "OK" then
-            m.reconnectState = "idle"
+            ' Show active-retry style immediately (spinner, CANCEL, status message)
+            ' then reload. reloadCurrentChannel now uses _resetRetryCounters (not
+            ' _resetRetryState) so the overlay is NOT hidden during the retry.
+            showRetryStatus("Retrying...")
             reloadCurrentChannel()
             return true
         end if

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 200 200"
+   version="1.1"
+   id="svg11"
+   sodipodi:docname="icon_religious.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs11" />
+  <sodipodi:namedview
+     id="namedview11"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="3.055"
+     inkscape:cx="100"
+     inkscape:cy="100"
+     inkscape:window-width="1600"
+     inkscape:window-height="824"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg11" />
+  <rect
+     width="200"
+     height="200"
+     fill="#024c48"
+     id="rect1" />
+  <!-- Outer rays (8) -->
+  <polygon
+     points="100,100 94,14 106,14"
+     fill="#8fcdc1"
+     opacity="0.7"
+     id="polygon1" />
+  <polygon
+     points="100,100 155,36 163,46"
+     fill="#8fcdc1"
+     opacity="0.7"
+     id="polygon2" />
+  <polygon
+     points="100,100 183,93 183,107"
+     fill="#8fcdc1"
+     opacity="0.7"
+     id="polygon3" />
+  <polygon
+     points="100,100 163,154 155,164"
+     fill="#8fcdc1"
+     opacity="0.7"
+     id="polygon4" />
+  <polygon
+     points="100,100 106,186 94,186"
+     fill="#8fcdc1"
+     opacity="0.7"
+     id="polygon5" />
+  <polygon
+     points="100,100 45,164 37,154"
+     fill="#8fcdc1"
+     opacity="0.7"
+     id="polygon6" />
+  <polygon
+     points="100,100 17,107 17,93"
+     fill="#8fcdc1"
+     opacity="0.7"
+     id="polygon7" />
+  <polygon
+     points="100,100 37,46 45,36"
+     fill="#8fcdc1"
+     opacity="0.7"
+     id="polygon8" />
+  <!-- Middle ring -->
+  <circle
+     cx="100"
+     cy="100"
+     r="46"
+     fill="#E8B84B"
+     id="circle8" />
+  <!-- Inner circle -->
+  <circle
+     cx="100"
+     cy="100"
+     r="28"
+     fill="#024c48"
+     id="circle9" />
+  <!-- Core dot -->
+  <circle
+     cx="100"
+     cy="100"
+     r="12"
+     fill="#E85D3A"
+     id="circle10" />
+</svg>

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 200 200"
+   version="1.1"
+   id="svg5"
+   sodipodi:docname="icon_drama.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs5" />
+  <sodipodi:namedview
+     id="namedview5"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="3.055"
+     inkscape:cx="100"
+     inkscape:cy="100"
+     inkscape:window-width="1600"
+     inkscape:window-height="824"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg5" />
+  <rect
+     width="200"
+     height="200"
+     fill="#024c48"
+     id="rect1" />
+  <!-- Left curtain (sweeps down-right at bottom) -->
+  <path
+     d="M0,0 L82,0 L58,200 L0,200 Z"
+     fill="#E85D3A"
+     id="path1" />
+  <!-- Right curtain -->
+  <path
+     d="M200,0 L118,0 L142,200 L200,200 Z"
+     fill="#E85D3A"
+     id="path2" />
+  <!-- Curtain header valance -->
+  <rect
+     x="0"
+     y="0"
+     width="200"
+     height="20"
+     fill="#8fcdc1"
+     id="rect2" />
+  <!-- Curtain fold highlights -->
+  <line
+     x1="20"
+     y1="20"
+     x2="10"
+     y2="200"
+     stroke="#024c48"
+     stroke-width="3"
+     opacity="0.4"
+     id="line2" />
+  <line
+     x1="54"
+     y1="20"
+     x2="40"
+     y2="200"
+     stroke="#024c48"
+     stroke-width="3"
+     opacity="0.4"
+     id="line3" />
+  <line
+     x1="146"
+     y1="20"
+     x2="160"
+     y2="200"
+     stroke="#024c48"
+     stroke-width="3"
+     opacity="0.4"
+     id="line4" />
+  <line
+     x1="180"
+     y1="20"
+     x2="190"
+     y2="200"
+     stroke="#024c48"
+     stroke-width="3"
+     opacity="0.4"
+     id="line5" />
+  <!-- Spotlight star in center gap -->
+  <polygon
+     points="100,66 106,92 134,92 112,108 120,134 100,118 80,134 88,108 66,92 94,92"
+     fill="#E8B84B"
+     id="polygon5" />
+  <!-- Stage floor line -->
+</svg>

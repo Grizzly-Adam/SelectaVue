@@ -65,6 +65,19 @@ end sub
 
 ' ---------- Private helpers ----------
 
+' Fires AppDialogComplete exactly once, only if this dialog sequence was
+' the very-first-run one (see m.isFirstRunSetupDialog in MainScene.brs's
+' init()) — not when showPlaylistManager() is reached later from the
+' in-app "add playlist" menu. Called at every exit point of the flow below
+' (success, cancel, or error) since the beacon measures time spent in the
+' dialog, not whether it succeeded.
+sub _completeFirstRunSetupDialogIfNeeded()
+    if m.isFirstRunSetupDialog then
+        m.top.signalBeacon("AppDialogComplete")
+        m.isFirstRunSetupDialog = false
+    end if
+end sub
+
 ' Unobserve and close the current dialog in one call.
 sub _closeDialog()
     if m.top.dialog <> invalid then
@@ -75,6 +88,7 @@ end sub
 
 ' Return focus to the playlist side panel — always done together.
 sub _returnToPlaylistPanel()
+    _completeFirstRunSetupDialogIfNeeded()
     m.playlistList.setFocus(true)
     m.playlistPanelActive = true
 end sub

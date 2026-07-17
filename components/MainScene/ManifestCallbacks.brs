@@ -10,9 +10,16 @@ sub onManifestPatched()
     print ">>> PATCHER: useProxy="; iif(result.useProxy = true, "true", "false")
 
     ' Guard: if pendingRetryContent was cleared (user navigated away during async patch),
-    ' discard this result entirely — it belongs to the old channel.
+    ' discard this result — it belongs to the old channel.
+    ' For useProxy=true: the proxy callback has its own pendingProxyContent=invalid guard
+    ' which stops a stale proxy, but we still check loadingChannelIndex for consistency.
     if m.pendingRetryContent = invalid and result.useProxy <> true then
         print ">>> PATCHER: Stale result (pendingRetryContent cleared) -- discarding"
+        return
+    end if
+    if m.loadingChannelIndex < 0 then
+        print ">>> PATCHER: Stale result (no active channel) -- discarding"
+        m.pendingRetryContent = invalid
         return
     end if
 
@@ -36,8 +43,9 @@ sub onManifestPatched()
     if content = invalid then return
 
     if result.error <> "" then
-        print ">>> PATCHER: Fetch failed, continuing to step 5"
-        m.retryCount = 4
+        print ">>> PATCHER: Fetch failed -- escalating to 8Mbps probe"
+        m.retryCount = 2   ' retryStream() increments to 3 = 8Mbps step
+        m.manifestPatchAttempted = true
         retryStream("Manifest fetch failed: " + result.error)
         return
     end if
@@ -70,10 +78,13 @@ sub onProxyStatusChanged()
         print ">>> PROXY [callback]: Proxy error -- "; status
         m.pendingProxyContent = invalid
         m.proxyOriginalUrl    = ""
-        ' Escalate past patcher to avoid useProxy->error->patcher->useProxy loop.
-        ' ManifestPatcher would return useProxy=true again for this stream type.
-        print ">>> PROXY [callback]: Escalating to bandwidth probe (step 5)"
-        m.retryCount = 4   ' will be incremented to 5 by retryStream()
+        ' Escalate to the 8Mbps bandwidth probe (Step 3 in the new ladder).
+        ' We set retryCount=2 with manifestPatchAttempted=true so retryStream()
+        ' increments to 3 and lands on the bandwidth probe — skipping the patcher
+        ' which would just return useProxy=true again and loop.
+        print ">>> PROXY [callback]: Escalating to 8Mbps bandwidth probe"
+        m.retryCount = 2
+        m.manifestPatchAttempted = true
         retryStream("Proxy failed: " + status)
         return
     end if

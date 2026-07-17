@@ -67,23 +67,55 @@ sub onChannelPlayingSuccessfully(url as String, content as Object)
     if url = "" or url = invalid then return
     if content = invalid then return
 
+    channel  = _currentChannel()
+    cacheKey = url
+    isProxy  = false
+
+    if channel <> invalid and channel.url <> invalid then
+        isProxy    = (Left(url, 7) = "http://" and url.InStr(":7171/") >= 0)
+        isModified = (url.InStr("_HLS_skip") >= 0)
+        if isProxy or isModified then
+            cacheKey = channel.url
+            print ">>> CACHE: Mapping play URL to channel URL for cache key: "; cacheKey
+        end if
+    end if
+
     entry = _buildCacheEntry(content)
 
-    ' If already in persistent cache, update it immediately
-    if m.persistentSettingsCache.DoesExist(url) then
-        m.persistentSettingsCache[url] = entry
-        _savePersistentCache()
-        print ">>> CACHE: Updated persistent entry for: "; url
+    ' For proxy channels: fix the entry URL (it's the proxy URL, not the
+    ' original stream URL) and force useProxy=true. Without this, the cached
+    ' entry plays http://IP:7171/master directly next time without starting
+    ' the proxy — stalling immediately.
+    if isProxy then
+        entry.url      = cacheKey   ' original channel URL, not proxy URL
+        entry.useProxy = true
+        print ">>> CACHE: Proxy channel — storing original URL with useProxy=true"
+    else
+        ' Non-proxy: preserve useProxy flag if it was set by a prior proxy play.
+        ' Check both session and persistent caches since the flag may be in either.
+        existing = invalid
+        if m.persistentSettingsCache.DoesExist(cacheKey) then
+            existing = m.persistentSettingsCache[cacheKey]
+        else if m.sessionSettingsCache.DoesExist(cacheKey) then
+            existing = m.sessionSettingsCache[cacheKey]
+        end if
+        if existing <> invalid and existing.useProxy = true then
+            entry.useProxy = true
+        end if
+    end if
+
+    if m.persistentSettingsCache.DoesExist(cacheKey) then
+        m.persistentSettingsCache[cacheKey] = entry
+        m.pendingCacheUrl = cacheKey
+        _startNamedTimer("settingsCacheTimer", 120.0, false, "onSettingsCacheTimerFired")
+        print ">>> CACHE: Updated persistent entry for: "; cacheKey
         return
     end if
 
-    ' Not persisted yet — add to session cache and start 2-minute timer
-    _addToSessionCache(url, entry)
-
-    ' Start/restart the 2-minute promotion timer
-    m.pendingCacheUrl = url
+    _addToSessionCache(cacheKey, entry)
+    m.pendingCacheUrl = cacheKey
     _startNamedTimer("settingsCacheTimer", 120.0, false, "onSettingsCacheTimerFired")
-    print ">>> CACHE: Session entry added, 2-min timer started for: "; url
+    print ">>> CACHE: Session entry added, 2-min timer started for: "; cacheKey
 end sub
 
 ' Called when the 2-minute timer fires — promote session entry to persistent
@@ -91,40 +123,61 @@ sub onSettingsCacheTimerFired()
     m.settingsCacheTimer = invalid
     url = m.pendingCacheUrl
     m.pendingCacheUrl = invalid
-
     if url = invalid or url = "" then return
-    if not m.sessionSettingsCache.DoesExist(url) then return
 
-    ' Promote to persistent
-    entry = m.sessionSettingsCache[url]
-    _addToPersistentCache(url, entry)
+    ' If it was a session entry, promote it to persistent now
+    if m.sessionSettingsCache.DoesExist(url) then
+        entry = m.sessionSettingsCache[url]
+        _addToPersistentCache(url, entry)
+        m.sessionSettingsCache.Delete(url)
+        _removeFromOrder(m.sessionCacheOrder, url)
+        print ">>> CACHE: Promoted to persistent: "; url
+    end if
+
+    ' Either way, flush the persistent cache to registry now
+    ' (deferred from onChannelPlayingSuccessfully to avoid render-thread I/O)
     _savePersistentCache()
-
-    ' Remove from session (no longer needed in memory)
-    m.sessionSettingsCache.Delete(url)
-    _removeFromOrder(m.sessionCacheOrder, url)
-
-    print ">>> CACHE: Promoted to persistent: "; url
 end sub
 
 ' ---------- Lookup ----------
 
 ' Returns a cache entry AA or invalid if not found.
 ' Checks persistent first, then session.
+' Also fixes stale entries where url=http://IP:7171/... was incorrectly stored
+' by pre-fix sessions — forces useProxy=true and restores the correct URL.
 function lookupCachedSettings(url as String) as Object
     if url = "" or url = invalid then return invalid
 
+    entry = invalid
     if m.persistentSettingsCache.DoesExist(url) then
         print ">>> CACHE HIT (persistent): "; url
-        return m.persistentSettingsCache[url]
-    end if
-
-    if m.sessionSettingsCache.DoesExist(url) then
+        entry = m.persistentSettingsCache[url]
+    else if m.sessionSettingsCache.DoesExist(url) then
         print ">>> CACHE HIT (session): "; url
-        return m.sessionSettingsCache[url]
+        entry = m.sessionSettingsCache[url]
     end if
 
-    return invalid
+    if entry = invalid then return invalid
+
+    ' Fix stale proxy URL entries: pre-fix sessions stored http://IP:7171/master
+    ' as the content URL with useProxy=false. Playing this URL without the proxy
+    ' running stalls immediately. Detect and fix on the way out of the cache.
+    if entry.url <> invalid then
+        lUrl = LCase(entry.url)
+        if Left(lUrl, 7) = "http://" and entry.url.InStr(":7171/") >= 0 then
+            print ">>> CACHE: Fixed stale proxy URL entry — restoring useProxy=true"
+            entry.useProxy = true
+            entry.url      = url   ' restore the correct channel URL (the cache key)
+            ' Update the stored entry so we don't have to fix it again next time
+            if m.persistentSettingsCache.DoesExist(url) then
+                m.persistentSettingsCache[url] = entry
+            else if m.sessionSettingsCache.DoesExist(url) then
+                m.sessionSettingsCache[url] = entry
+            end if
+        end if
+    end if
+
+    return entry
 end function
 
 ' Build a ContentNode from a cache entry, preserving the channel's custom headers.

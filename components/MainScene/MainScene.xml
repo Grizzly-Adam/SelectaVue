@@ -8,6 +8,8 @@
 <script type="text/brightscript" uri="pkg:/components/MainScene/ManifestCallbacks.brs"/>
 <!-- iif, detectStreamFormat, BUILTIN_PLAYLIST_COUNT, getFriendlyError, getLanguageName, toStr, isValidUrl -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/Utils.brs"/>
+<!-- Icon selection, category matching, logo load callbacks -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/IconHelpers.brs"/>
 <script type="text/brightscript" uri="pkg:/components/Shared/PlaylistSort.brs"/>
 <!-- Save / load / restore last playlist + channel across launches -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/StateManager.brs"/>
@@ -35,6 +37,7 @@
 <script type="text/brightscript" uri="pkg:/components/MainScene/ChannelNav.brs"/>
 <!-- Per-playlist favorites: storage, toggle, favorites grid view -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/Favorites.brs"/>
+<script type="text/brightscript" uri="pkg:/components/MainScene/HiddenChannels.brs"/>
 <!-- Bottom-third channel bar: logo, name, Favorite/CC/Details/Live buttons -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/ChannelBar.brs"/>
 <!-- Audio, subtitle and channel-details option menus -->
@@ -103,7 +106,7 @@
         sectionDividerFont="font:SmallBoldSystemFont"
         sectionDividerTextColor="0x8fcdc1FF"
     	visible="false"/>
-    
+
     <!-- Video preview in the grid -->
     <Video
         id="PreviewVideo"
@@ -265,7 +268,7 @@
         <!-- Buttons -->
         <Rectangle
             id="channelBarFavoriteBtn"
-            translation="[1354, 10]"
+            translation="[1288, 10]"
             width="56"
             height="56"
             color="0x3D5C56FF">
@@ -281,7 +284,7 @@
 
         <Rectangle
             id="channelBarCCBtn"
-            translation="[1420, 10]"
+            translation="[1354, 10]"
             width="62"
             height="56"
             color="0x3D5C56FF">
@@ -297,7 +300,7 @@
 
         <Rectangle
             id="channelBarLiveBtn"
-            translation="[1492, 10]"
+            translation="[1426, 10]"
             width="104"
             height="56"
             color="0x3D5C56FF">
@@ -312,7 +315,7 @@
 
         <Rectangle
             id="channelBarDetailsBtn"
-            translation="[1606, 10]"
+            translation="[1540, 10]"
             width="56"
             height="56"
             color="0x3D5C56FF">
@@ -321,6 +324,25 @@
                 width="48"
                 height="48"
                 uri="pkg:/images/info.png"
+                blendColor="0xFFFFFFFF"
+                loadDisplayMode="scaleToFit"/>
+        </Rectangle>
+
+        <!-- Hide/Unhide: dimmed = hidden, bright = visible -- inverted from
+             the Favorite/CC pattern above, since "bright" here means
+             "currently showing", not "this toggle is active" -->
+        <Rectangle
+            id="channelBarHideBtn"
+            translation="[1606, 10]"
+            width="76"
+            height="56"
+            color="0x3D5C56FF">
+            <Poster
+                id="channelBarHideIcon"
+                translation="[4, 4]"
+                width="68"
+                height="48"
+                uri="pkg:/images/show_hide.png"
                 blendColor="0xFFFFFFFF"
                 loadDisplayMode="scaleToFit"/>
         </Rectangle>
@@ -415,7 +437,7 @@
 
         <Label
             id="loadingOverlayLabel"
-            translation="[20, 100]"
+            translation="[20, 80]"
             text="Loading playlist..."
             font="font:MediumBoldSystemFont"
             color="0xFFFFFFFF"
@@ -553,6 +575,9 @@
 
     <LocalProxy
         id="localProxy"/>
+
+<!-- Deep linking (launch args + runtime roInputEvent) -->
+<script type="text/brightscript" uri="pkg:/components/MainScene/DeepLink.brs"/>
 
 </children>
 </component>

@@ -88,12 +88,41 @@ function _handleGridKey(key as String) as Boolean
     else if key = "replay" then
         if m.playlistPanelActive then
             reloadCurrentPlaylist()
-        else
-            ' Jump focus to previously watched channel and start preview
-            if m.previousChannelIndex >= 0 and m.flatChannelList <> invalid and m.previousChannelIndex < m.flatChannelList.Count() then
-                m.currentChannelIndex = m.previousChannelIndex
-                m.channelList.jumpToItem = m.previousChannelIndex
-                playPreviewChannel(m.previousChannelIndex)
+        else if m.flatChannelList <> invalid and m.flatChannelList.Count() > 0 then
+            ' Purely a selection operation -- never actually plays anything,
+            ' just moves grid focus. Driven entirely by comparing current
+            ' focus to what's actually playing (m.playingPreviewIndex), so
+            ' it self-corrects on every press rather than relying on a
+            ' separate toggle flag to remember which "side" we're on:
+            '   - Not focused on what's playing?  Jump there.
+            '   - Already focused on what's playing?  Jump to the previous
+            '     channel instead.
+            playingIdx = m.playingPreviewIndex
+            focusedIdx = m.channelList.itemFocused
+
+            if playingIdx >= 0 and playingIdx < m.flatChannelList.Count() and focusedIdx <> playingIdx then
+                m.currentChannelIndex    = playingIdx
+                m.channelList.jumpToItem = playingIdx
+            else
+                ' Already on what's playing -- jump to the previous channel:
+                ' the surf-based one if there's been any surfing in this
+                ' playlist, otherwise the last channel watched on THIS
+                ' SPECIFIC playlist (see StateManager.brs) -- e.g. right
+                ' after switching playlists, before surfing within it.
+                targetIdx = -1
+                if m.previousChannelIndex >= 0 and m.previousChannelIndex < m.flatChannelList.Count() and m.previousChannelIndex <> playingIdx then
+                    targetIdx = m.previousChannelIndex
+                else
+                    lastUrl = lastWatchedUrlForCurrentPlaylist()
+                    if lastUrl <> "" then
+                        idx = findChannelIndexByUrl(lastUrl)
+                        if idx >= 0 and idx <> playingIdx then targetIdx = idx
+                    end if
+                end if
+                if targetIdx >= 0 then
+                    m.currentChannelIndex    = targetIdx
+                    m.channelList.jumpToItem = targetIdx
+                end if
             end if
         end if
         return true

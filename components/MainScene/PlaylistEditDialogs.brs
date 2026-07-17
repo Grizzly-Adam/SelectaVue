@@ -13,21 +13,58 @@ sub showPlaylistOptions()
     m.selectedPlaylistIndex = selectedIdx
     selectedPlaylist = m.playlists[selectedIdx]
 
+    ' "Show Hidden Channels" only makes sense for whichever playlist is
+    ' actually loaded right now -- hidden channels are checked against
+    ' m.rawAllChannels, which only ever holds ONE playlist's parsed data at
+    ' a time (see HiddenChannels.brs). Omitted when browsing options for a
+    ' different, not-currently-loaded playlist in the list.
+    isCurrentlyLoaded = (selectedIdx = m.currentPlaylist)
+    viewToggleLabel   = iif(m.hiddenOnly, "Show All Channels", "Show Hidden Channels")
+
     if selectedPlaylist.isDefault = true then
-        _showSimpleDialog(selectedPlaylist.name, "Built-in playlists cannot be edited or removed.", ["OK"], "onDefaultPlaylistDialogClosed")
+        if isCurrentlyLoaded then
+            _showSimpleDialog(selectedPlaylist.name, "Built-in playlists cannot be edited or removed.", [viewToggleLabel, "OK"], "onDefaultPlaylistDialogClosed")
+        else
+            _showSimpleDialog(selectedPlaylist.name, "Built-in playlists cannot be edited or removed.", ["OK"], "onDefaultPlaylistDialogClosed")
+        end if
         return
     end if
 
-    _showSimpleDialog("Options: " + selectedPlaylist.name, "", ["Edit Name", "Edit URL", "Delete", "Cancel"], "onPlaylistOptionSelected")
+    if isCurrentlyLoaded then
+        _showSimpleDialog("Options: " + selectedPlaylist.name, "", ["Edit Name", "Edit URL", "Delete", viewToggleLabel, "Cancel"], "onPlaylistOptionSelected")
+    else
+        _showSimpleDialog("Options: " + selectedPlaylist.name, "", ["Edit Name", "Edit URL", "Delete", "Cancel"], "onPlaylistOptionSelected")
+    end if
+end sub
+
+' Shared by both dialog variants above -- toggles between the Hidden
+' Channels view and the normal grid. Safe to call unconditionally from the
+' playlist panel: that panel only exists in the grid, never fullscreen, so
+' there's no fullscreen-exit transition to worry about here (unlike the
+' Details-dialog version this replaced, which had to back out of fullscreen
+' first).
+sub _toggleHiddenChannelsViewFromPlaylistMenu()
+    if m.hiddenOnly then
+        exitHiddenChannelsView()
+    else
+        showHiddenChannelsView()
+    end if
 end sub
 
 sub onDefaultPlaylistDialogClosed()
+    buttonIdx   = m.top.dialog.buttonSelected
+    buttonCount = m.top.dialog.buttons.Count()
     _closeDialog()
-    _returnToPlaylistPanel()
+    if buttonCount = 2 and buttonIdx = 0 then
+        _toggleHiddenChannelsViewFromPlaylistMenu()
+    else
+        _returnToPlaylistPanel()
+    end if
 end sub
 
 sub onPlaylistOptionSelected()
-    buttonIdx = m.top.dialog.buttonSelected
+    buttonIdx       = m.top.dialog.buttonSelected
+    hasHiddenToggle = (m.top.dialog.buttons.Count() = 5)
     _closeDialog()
     if buttonIdx = 0 then
         _delayedCall("editPlaylistName", 0.2)
@@ -35,6 +72,8 @@ sub onPlaylistOptionSelected()
         _delayedCall("editPlaylistUrl", 0.2)
     else if buttonIdx = 2 then
         _delayedCall("confirmDeletePlaylist", 0.2)
+    else if hasHiddenToggle and buttonIdx = 3 then
+        _toggleHiddenChannelsViewFromPlaylistMenu()
     else
         _returnToPlaylistPanel()
     end if

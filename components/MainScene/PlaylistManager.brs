@@ -18,7 +18,8 @@ sub loadSavedPlaylists()
     m.playlists = []
 
     ' Built-in playlists — isDefault = true, never written to registry.
-    ' If you add or remove entries here, update BUILTIN_PLAYLIST_COUNT in Utils.brs.
+    ' BUILTIN_PLAYLIST_COUNT() in Utils.brs counts these automatically via
+    ' isDefault, so no separate constant to keep in sync when editing this list.
     m.playlists.Push({ name: "Southdale Labs", url: "https://grizz.atwebpages.com/grizz.m3u",           isDefault: true })
     m.playlists.Push({ name: "United States",  url: "https://iptv-org.github.io/iptv/countries/us.m3u", isDefault: true })
     m.playlists.Push({ name: "Canada",         url: "https://iptv-org.github.io/iptv/countries/ca.m3u", isDefault: true })
@@ -48,6 +49,10 @@ sub savePlaylist(name as String, url as String)
     reg.Flush()
     m.playlists.Push({ name: name, url: url, isDefault: false })
     setupPlaylistMenu()
+    ' Jump panel focus to the newly added playlist so user sees it immediately
+    newIdx = m.playlists.Count()   ' +1 for Favorites entry at index 0
+    m.playlistList.jumpToItem = newIdx
+    m.playlistFocusIndex      = newIdx
 end sub
 
 ' ---------- Menu setup ----------
@@ -78,7 +83,9 @@ sub onPlaylistFocused()
 end sub
 
 sub onPlaylistSelected()
+    print ">>> LOADDLG: onPlaylistSelected called, loadingDialogVisible="; m.loadingDialogVisible; " isPlayingVideo="; m.isPlayingVideo
     if m.loadingDialogVisible then
+        print ">>> LOADDLG: onPlaylistSelected -- dialog already visible, dismissing for input and returning without loading"
         _dismissLoadingDialogForInput()
         return
     end if
@@ -90,9 +97,24 @@ sub onPlaylistSelected()
     else if selectedIdx = m.playlists.Count() + 1 then
         showPlaylistManager()
     else if selectedIdx >= 1 and selectedIdx <= m.playlists.Count() then
-        playlistIdx         = selectedIdx - 1
+        playlistIdx = selectedIdx - 1
+        ' Re-selecting the already-loaded playlist is the "refresh this
+        ' playlist" gesture, but only in the standard grid. While browsing
+        ' Favorites or Hidden Channels, it's not a refresh action — those
+        ' are filtered views layered on top of whatever's loaded, and
+        ' reloading here would just be an unwanted interruption (loading
+        ' dialog, re-parse) for someone who didn't ask for one.
+        if playlistIdx = m.currentPlaylist and (m.favoritesOnly or m.hiddenOnly) then
+            ' Not a reload/refresh request -- browsing a filtered view and
+            ' re-selecting the playlist that's already loaded means "take
+            ' me back to the standard grid", no playlist reload/reparse.
+            returnToStandardGridView()
+            return
+        end if
         m.currentPlaylist   = playlistIdx
         m.pendingChannelUrl = invalid
+        _captureChannelBeforePlaylistSwitch()
+        print ">>> LOADDLG: onPlaylistSelected -- about to call loadPlaylist for playlistIdx="; playlistIdx
         loadPlaylist(m.playlists[playlistIdx].url)
         saveLastState()
     end if

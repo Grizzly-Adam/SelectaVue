@@ -5,14 +5,18 @@
 '
 ' Timers managed in this file:
 '   gridInactivityTimer       - auto-fullscreen or screensaver after 45s on grid
-'   fullscreenInactivityTimer - screensaver shade after 45s fullscreen with error
+'   fullscreenInactivityTimer - screensaver shade after 45s idle in fullscreen
 '   overlayInactivityTimer    - auto-dismiss quick-menu after 30s
 '   optionsDialogTimer        - auto-close video options dialog after 30s
 '
-' See also: PlaybackHealthTimers.brs (stall/error-delay/network/stream-retry/
-' countdown/OK-suppression), SessionRefreshTimer.brs (session-token refresh),
-' and SettingsCache.brs (settingsCacheTimer, a 2min promotion delay — managed
-' entirely in that file, not here).
+' onDialogChanged() below pauses gridInactivityTimer/fullscreenInactivityTimer
+' entirely for as long as a StandardKeyboardDialog (playlist name/URL entry)
+' is up — otherwise a slow typist could get yanked into fullscreen or dimmed
+' by the screensaver mid-dialog. See also PlaybackHealthTimers.brs
+' (stall/error-delay/network/stream-retry/countdown/OK-suppression),
+' SessionRefreshTimer.brs (session-token refresh), and SettingsCache.brs
+' (settingsCacheTimer, a 2min promotion delay — managed entirely in that
+' file, not here).
 
 ' ---------- Loading dialog: active-input dismissal (grid only) ----------
 ' Called from onKeyEvent (OK/back/up/down/left) and from the itemSelected/
@@ -21,10 +25,15 @@
 ' m.loadingDialogVisible stays true since the fetch task is still running;
 ' SetContent() clears it properly once the load actually finishes.
 sub _dismissLoadingDialogForInput()
+    print ">>> LOADDLG: _dismissLoadingDialogForInput called"
     if m.loadingOverlay       <> invalid then m.loadingOverlay.visible       = false
     if m.loadingOverlayBorder <> invalid then m.loadingOverlayBorder.visible = false
     if m.screensaverOverlay <> invalid and (m.reconnectOverlay = invalid or not m.reconnectOverlay.visible) then
         m.screensaverOverlay.visible = false
+    end if
+    if m.videoHiddenForLoadingDialog then
+        if m.previewVideo <> invalid then m.previewVideo.visible = true
+        m.videoHiddenForLoadingDialog = false
     end if
 end sub
 
@@ -40,6 +49,7 @@ end sub
 ' stop and not process the key/event any further).
 function _dismissScreensaverIfVisible() as Boolean
     if m.screensaverOverlay = invalid or not m.screensaverOverlay.visible then return false
+    print ">>> LOADDLG: _dismissScreensaverIfVisible -- shade was visible, dismissing (loadingDialogVisible="; m.loadingDialogVisible; ")"
     ' The reconnect dialog owns the shade for as long as it's up, in any
     ' state — cancelling/dismissing it goes through hideReconnectingOverlay
     ' (which explicitly turns the shade off itself), not this generic path.
@@ -56,10 +66,32 @@ function _dismissScreensaverIfVisible() as Boolean
     return true
 end function
 
+' ---------- Text-entry dialog pause ----------
+' Fires on every change to m.top.dialog — both when one is assigned (opened)
+' and when it reverts to invalid (closed, whether via its own buttons or the
+' Back key — the framework clears the field automatically either way, so
+' this catches every dismiss path without needing a hook at each call site).
+sub onDialogChanged()
+    dlg = m.top.dialog
+    if dlg <> invalid and dlg.subtype() = "StandardKeyboardDialog" then
+        m.textEntryDialogVisible = true
+        _cancelNamedTimer("gridInactivityTimer")
+        _cancelNamedTimer("fullscreenInactivityTimer")
+    else if m.textEntryDialogVisible then
+        m.textEntryDialogVisible = false
+        if m.isPlayingVideo then
+            resetFullscreenInactivityTimer()
+        else
+            resetGridInactivityTimer()
+        end if
+    end if
+end sub
+
 ' ---------- Grid inactivity ----------
 
 sub resetGridInactivityTimer()
     if m.isPlayingVideo then return
+    if m.textEntryDialogVisible then return   ' paused — see onDialogChanged above
     if m.screensaverOverlay <> invalid and (m.reconnectOverlay = invalid or not m.reconnectOverlay.visible) then
         m.screensaverOverlay.visible = false
     end if
@@ -102,6 +134,7 @@ sub onGridInactivity()
             if channel <> invalid then showChannelBar(channel)
         end if
         saveLastState()
+        resetFullscreenInactivityTimer()
     else
         if m.screensaverOverlay <> invalid then m.screensaverOverlay.visible = true
     end if
@@ -110,6 +143,7 @@ end sub
 ' ---------- Fullscreen inactivity ----------
 
 sub resetFullscreenInactivityTimer()
+    if m.textEntryDialogVisible then return   ' paused — see onDialogChanged above
     if m.screensaverOverlay <> invalid and (m.reconnectOverlay = invalid or not m.reconnectOverlay.visible) then
         m.screensaverOverlay.visible = false
     end if

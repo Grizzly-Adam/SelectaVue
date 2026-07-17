@@ -24,6 +24,7 @@ sub _cancelAllRetryTimers()
     cancelNetworkPollTimer()
     cancelChannelLoadBufferTimer()
     cancelDialogShadeTimer()
+    _cancelNamedTimer("surfDwellTimer")
 end sub
 
 ' ---------- Error overlays ----------
@@ -232,6 +233,12 @@ sub cancelRetryOverlay()
     _cancelAllRetryTimers()
     stopPreviewVideo()
     hideReconnectingOverlay()
+    ' The channel-load buffer/progress bar isn't part of the reconnect overlay
+    ' and isn't touched by any of the calls above, so without this it keeps
+    ' sitting on top of the Channel Unavailable overlay we're about to show —
+    ' it only went away before because a focus change (up/down) happened to
+    ' call hideBufferBar() separately in onChannelFocused.
+    hideBufferBar()
 
     if m.isPlayingVideo then
         ' Fullscreen: show gave-up state
@@ -261,6 +268,7 @@ sub _silentCancelRetry()
     _cancelAllRetryTimers()
     stopPreviewVideo()
     hideReconnectingOverlay()
+    hideBufferBar()
 end sub
 
 ' Clears any in-flight reconnect state (m.reconnectState: ladder/outage/

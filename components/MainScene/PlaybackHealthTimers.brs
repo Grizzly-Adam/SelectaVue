@@ -65,6 +65,9 @@ end sub
 sub onBufferStall()
     m.stallTimer = invalid
     if m.previewVideo.state <> "buffering" then return
+    ' Don't restart the ladder if the user already cancelled
+    if m.reconnectState = "gaveup" then return
+    if m.loadingChannelIndex < 0 then return
     pct    = 0
     status = m.previewVideo.bufferingStatus
     if status <> invalid and status.percentage <> invalid then pct = status.percentage

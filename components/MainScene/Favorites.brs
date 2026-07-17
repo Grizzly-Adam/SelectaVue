@@ -38,10 +38,17 @@ sub _syncFavoriteStars()
     for each channel in m.flatChannelList
         if channel = invalid then continue for
         base = channel.baseTitle
-        if base = invalid or base = "" then
-            base = channel.title
-            channel.AddFields({ baseTitle: base })
-        end if
+        if base = invalid or base = "" then base = channel.title
+        ' Defensive: strip a star prefix off whatever `base` turned out to
+        ' be, however it was derived above -- a node copied onto a "Now
+        ' Playing" pin, or reached here some other way, could end up with
+        ' an already-starred string standing in for base title if its
+        ' baseTitle field didn't carry over cleanly. Without this, that
+        ' compounds into "★ ★ Name" every time this runs; with it, this
+        ' function can never produce a doubled prefix regardless of what
+        ' state channel.title/channel.baseTitle arrived in.
+        if base <> invalid and base.Left(2) = "★ " then base = base.Mid(2)
+        if channel.baseTitle = invalid or channel.baseTitle = "" then channel.AddFields({ baseTitle: base })
         if isChannelFavorite(channel.url) then
             channel.title = "★ " + base
         else
@@ -83,9 +90,11 @@ sub _updateChannelListHeader()
     if m.channelListHeaderLabel = invalid then return
     serverName = currentServerName()
     if m.favoritesOnly then
-        m.channelListHeaderLabel.text = "Loaded playlist: " + serverName + "   ★ Favorites"
+        m.channelListHeaderLabel.text = serverName + " ★"
+    else if m.hiddenOnly then
+        m.channelListHeaderLabel.text = serverName + " (Hidden) "
     else
-        m.channelListHeaderLabel.text = "Loaded playlist: " + serverName
+        m.channelListHeaderLabel.text = serverName
     end if
 end sub
 

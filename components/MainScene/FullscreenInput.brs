@@ -25,7 +25,7 @@
 '   options (*) → toggle favorite on current channel
 '   play        → pause / resume (unaffected by the bar)
 '   replay      → jump to previously watched channel (unaffected by the bar)
-'   (auto-hides after 3s of no input; bar and quick channel menu are mutually exclusive)
+'   (auto-hides after 4s of no input; bar and quick channel menu are mutually exclusive)
 
 ' ---------- Fullscreen key handling ----------
 
@@ -103,6 +103,7 @@ function _handleFullscreenKey(key as String) as Boolean
         else if m.overlayVisible then
             channel = m.flatChannelList[m.currentChannelIndex]
             if channel <> invalid then
+                print ">>> NAV: OK-in-overlay playChannel, currentChannelIndex="; m.currentChannelIndex
                 m.suppressNextVideoOptionsMenu = true
                 startOverlayOkSuppressionTimer()
                 hideOverlay()
@@ -143,7 +144,11 @@ sub _exitFullscreen()
     hideBufferBar()
     cancelStallTimer()
     m.lastBufferPct = -1
-    hideReconnectingOverlay()
+    ' Preserve network-wait state when exiting fullscreen — don't silently dismiss
+    ' a "waiting for network" overlay the user may not have noticed.
+    if m.reconnectState <> "network" then
+        hideReconnectingOverlay()
+    end if
     hideChannelBar()
 
     ' Restore preview error if this channel previously failed

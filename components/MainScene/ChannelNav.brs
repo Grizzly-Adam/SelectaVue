@@ -5,8 +5,23 @@
 ' ---------- Channel navigation in fullscreen ----------
 
 sub changeChannel(direction as Integer)
+    print ">>> NAV: changeChannel called, direction="; direction; " from index="; m.currentChannelIndex
     hideChannelBar()
     if m.flatChannelList = invalid or m.flatChannelList.Count() = 0 then return
+
+    ' Dwell timer for previousChannelIndex:
+    ' Capture the departure point only on the FIRST press of a surf session
+    ' (i.e. when no timer is already running). Subsequent rapid presses just
+    ' restart the timer without changing the capture — so no matter how many
+    ' channels the user skips through, "previous" always means the channel
+    ' they left when they STARTED surfing, not something in the middle.
+    if m.surfDwellTimer = invalid then
+        ' Use playingPreviewIndex (last confirmed-playing channel) as the
+        ' departure point — not loadingChannelIndex which may be mid-load.
+        m.surfStartChannelIndex = m.playingPreviewIndex
+    end if
+    _startNamedTimer("surfDwellTimer", 2.0, false, "onSurfDwellTimerFired")
+
     m.currentChannelIndex = m.currentChannelIndex + direction
     if m.currentChannelIndex < 0 then
         m.currentChannelIndex = m.flatChannelList.Count() - 1
@@ -19,19 +34,82 @@ sub changeChannel(direction as Integer)
     end if
 end sub
 
-' Jump to the previously watched channel
+' Called 2 seconds after the last channel-change press.
+' Commits the captured departure channel as previousChannelIndex.
+sub onSurfDwellTimerFired()
+    m.surfDwellTimer = invalid
+    if m.surfStartChannelIndex >= 0 then
+        m.previousChannelIndex = m.surfStartChannelIndex
+        print ">>> NAV: Dwell committed previousChannelIndex="; m.surfStartChannelIndex
+        m.surfStartChannelIndex = -1
+    end if
+end sub
+
+' Jump to the previously watched channel. Swaps current/previous so that
+' a second press toggles back — without this, previousChannelIndex was
+' left pointing at the channel we just jumped TO, so it equaled
+' currentChannelIndex and every subsequent press silently no-opped on
+' the "already on previous channel" guard below until the user surfed
+' (changeChannel's dwell-commit is what actually re-populates it).
+'
+' If there's no surf-based previousChannelIndex yet (e.g. you just switched
+' playlists and haven't surfed within this one), falls back to the last
+' channel watched on THIS SPECIFIC playlist (see StateManager.brs) and
+' actually plays it — unlike the grid's version of this same fallback
+' (GridInput.brs), which only moves focus/selection without tuning, fullscreen
+' has no "browse without committing" mode, so replay here always tunes.
+' A second press (m.replayFallbackActive), still without a real channel
+' change, toggles back to whatever's actually playing (m.playingPreviewIndex).
 sub jumpToPreviousChannel()
-    if m.previousChannelIndex < 0 then return
-    if m.flatChannelList = invalid or m.previousChannelIndex >= m.flatChannelList.Count() then return
-    if m.previousChannelIndex = m.currentChannelIndex then return   ' already on previous channel
-    channel = m.flatChannelList[m.previousChannelIndex]
-    if channel = invalid then return
-    m.currentChannelIndex = m.previousChannelIndex
+    print ">>> NAV: jumpToPreviousChannel called, previousChannelIndex="; m.previousChannelIndex; " currentChannelIndex="; m.currentChannelIndex
+    if m.flatChannelList = invalid then return
+
+    if m.previousChannelIndex >= 0 and m.previousChannelIndex < m.flatChannelList.Count() and m.previousChannelIndex <> m.currentChannelIndex then
+        channel = m.flatChannelList[m.previousChannelIndex]
+        if channel = invalid then return
+        departingIndex          = m.currentChannelIndex
+        m.currentChannelIndex   = m.previousChannelIndex
+        m.previousChannelIndex  = departingIndex
+        m.replayFallbackActive  = false
+        _jumpToChannelIndex(m.currentChannelIndex, channel)
+    else if m.replayFallbackActive then
+        ' Second press since switching playlists, still without an actual
+        ' channel change -- toggle back to whatever's really playing.
+        if m.playingPreviewIndex >= 0 and m.playingPreviewIndex < m.flatChannelList.Count() then
+            channel = m.flatChannelList[m.playingPreviewIndex]
+            if channel <> invalid then
+                m.currentChannelIndex = m.playingPreviewIndex
+                _jumpToChannelIndex(m.currentChannelIndex, channel)
+            end if
+        end if
+        m.replayFallbackActive = false
+    else
+        ' No surf-based previous channel yet -- fall back to the last
+        ' channel watched on THIS SPECIFIC playlist. If that turns out to BE
+        ' what's already playing, there's nothing to jump to/toggle.
+        lastUrl = lastWatchedUrlForCurrentPlaylist()
+        if lastUrl <> "" then
+            idx = findChannelIndexByUrl(lastUrl)
+            if idx >= 0 and idx <> m.playingPreviewIndex then
+                channel = m.flatChannelList[idx]
+                if channel <> invalid then
+                    m.currentChannelIndex  = idx
+                    m.replayFallbackActive = true
+                    _jumpToChannelIndex(idx, channel)
+                end if
+            end if
+        end if
+    end if
+end sub
+
+' Shared by jumpToPreviousChannel()'s branches above: plays the channel in
+' fullscreen, or updates grid focus/preview if called while not fullscreen.
+sub _jumpToChannelIndex(index as Integer, channel as Object)
     if m.isPlayingVideo then
         playChannel(channel)
     else
-        m.channelList.jumpToItem = m.previousChannelIndex
-        playPreviewChannel(m.previousChannelIndex)
+        if m.channelList <> invalid then m.channelList.jumpToItem = index
+        playPreviewChannel(index)
     end if
 end sub
 
@@ -40,6 +118,7 @@ end sub
 ' ---------- Launch fullscreen on startup ----------
 ' Called once at first playlist load to skip the grid and go straight to fullscreen.
 sub _launchFullscreen(channelIndex as Integer)
+    print ">>> NAV: _launchFullscreen called, channelIndex="; channelIndex; " initialLaunch="; m.initialLaunch; " isPlayingVideo="; m.isPlayingVideo
     if m.flatChannelList = invalid or channelIndex < 0 or channelIndex >= m.flatChannelList.Count() then return
     m.currentChannelIndex = channelIndex
     if m.channelList <> invalid then m.channelList.jumpToItem = channelIndex
@@ -54,12 +133,22 @@ sub reloadCurrentChannel()
     if channel = invalid then return
 
     stopPreviewVideo()
-    _resetRetryState()
+    _resetRetryCounters()   ' reset ladder state but keep overlay visible for RETRY flow
     m.loadingChannelIndex = m.currentChannelIndex
 
-    content = _makeContentNode(channel.url, channel.title, channel)
-    m.pendingHeaders = _resolveHeaders(channel)
-    _applyContentAndPlay(content)
+    ' Check cache — proxy channels can restart immediately without a doomed URL attempt
+    cached = lookupCachedSettings(channel.url)
+    if cached <> invalid and cached.useProxy = true then
+        print ">>> RELOAD: Cache says useProxy=true — starting proxy immediately"
+        m.cacheWasAttempted    = true
+        m.manifestPatchAttempted = true
+        m.pendingHeaders       = _resolveHeaders(channel)
+        _startLocalProxy(channel.url, _makeContentNode(channel.url, channel.title, channel))
+    else
+        content = _makeContentNode(channel.url, channel.title, channel)
+        m.pendingHeaders = _resolveHeaders(channel)
+        _applyContentAndPlay(content)
+    end if
     m.top.setFocus(true)
     print ">>> RELOAD: Done"
 end sub
@@ -71,6 +160,14 @@ sub reloadCurrentPlaylist()
     idx = rawIdx - 1
     if idx >= 0 and idx < m.playlists.Count() then
         m.currentPlaylist = idx
+        ' Matches onPlaylistSelected() in PlaylistManager.brs -- pendingChannelUrl
+        ' should only ever be non-empty once, right after launch, and gets
+        ' consumed by the very first SetContent() before any reload could
+        ' happen. Clearing it here too is defensive: if that consumption
+        ' timing ever changes, this stays consistent with its sibling
+        ' instead of silently reintroducing a stale-restore path here only.
+        m.pendingChannelUrl = invalid
+        _captureChannelBeforePlaylistSwitch()
         loadPlaylist(m.playlists[idx].url)
     end if
 end sub
@@ -88,10 +185,30 @@ sub checkState()
         m.playingPreviewIndex    = m.loadingChannelIndex
         m.streamWasPlaying       = true
         m.lastWorkingContent     = m.previewVideo.content
+        ' Only reset fullscreen inactivity timer when actually in fullscreen.
+        ' If preview is playing on the grid, we should NOT dismiss the screensaver shade.
+        if m.isPlayingVideo then resetFullscreenInactivityTimer()
+
+        ' Dwell commit: if the user stopped surfing and this channel reached
+        ' playing state, that's definitive — commit the departure channel as
+        ' previousChannelIndex now rather than waiting for the 2s timer.
+        if m.surfStartChannelIndex >= 0 then
+            m.previousChannelIndex  = m.surfStartChannelIndex
+            m.surfStartChannelIndex = -1
+            _cancelNamedTimer("surfDwellTimer")
+            print ">>> NAV: Playing — committed previousChannelIndex="; m.previousChannelIndex
+        end if
 
         ' Notify settings cache
         if m.previewVideo.content <> invalid then
             onChannelPlayingSuccessfully(m.previewVideo.content.url, m.previewVideo.content)
+            ' Remember this as the last channel watched on the currently
+            ' loaded playlist -- see StateManager.brs, used by GridInput.brs's
+            ' replay fallback. _currentLoadingChannelUrl() resolves proxy
+            ' channels back to the real channel URL (previewVideo.content.url
+            ' would be the local proxy address instead).
+            realUrl = _currentLoadingChannelUrl()
+            if realUrl <> "" then saveLastWatchedChannelForCurrentPlaylist(realUrl)
         end if
 
         ' Clear retry state
@@ -99,7 +216,6 @@ sub checkState()
         m.manifestPatchAttempted = false
         m.isNimbleStream         = false
         m.cacheWasAttempted      = false
-        m.bandwidthProbeIndex    = 0
         m.softStepCount          = 0
         m.slowBufferStartTime    = invalid
 
@@ -137,12 +253,36 @@ sub checkState()
             print ">>> STATE ERROR streamFormat="; m.previewVideo.content.streamFormat
             print ">>> STATE ERROR live="; m.previewVideo.content.live
         end if
-        ' Dump all current video node headers for debugging
+
+        ' Guard 1: user already cancelled — do not restart the ladder.
+        ' After CANCEL, reconnectState="gaveup". Any error arriving here is from
+        ' the video node draining its last attempt after control="stop" was sent.
+        if m.reconnectState = "gaveup" then
+            print ">>> STATE ERROR: Ignored — user already cancelled (gaveup state)"
+            return
+        end if
+
+        ' Guard 2: no channel is being loaded (loadingChannelIndex=-1 means state
+        ' was reset). Stale error from a previous load cycle — ignore it.
+        if m.loadingChannelIndex < 0 then
+            print ">>> STATE ERROR: Ignored — no active loading channel"
+            return
+        end if
+
+        ' Guard 3: error URL doesn't match what we're currently loading.
+        ' Fired from an abandoned channel after the user surfed away.
+        if m.previewVideo.content <> invalid then
+            currentLoadingChannel = _currentLoadingChannelUrl()
+            if currentLoadingChannel <> "" and m.previewVideo.content.url <> currentLoadingChannel then
+                print ">>> STATE ERROR: Stale error for abandoned channel — ignoring"
+                return
+            end if
+        end if
+
         hdrs = m.previewVideo.httpHeaders
         if hdrs <> invalid then
             print ">>> STATE ERROR video.HttpHeaders="; hdrs
         end if
-        ' Log buffer status at time of error
         bs = m.previewVideo.bufferingStatus
         if bs <> invalid then
             print ">>> STATE ERROR bufferPct="; bs.percentage; " bufferRate="; bs.isUnderrun

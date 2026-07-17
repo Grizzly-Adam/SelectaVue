@@ -57,13 +57,20 @@ end function
 ' ---------- Reset all retry/outage state for a new channel ----------
 
 sub _resetRetryState()
+    _resetRetryCounters()
+    hideReconnectingOverlay()
+end sub
+
+' Resets all retry counters and in-flight async state without touching the
+' reconnect overlay. Used internally and by reloadCurrentChannel so a RETRY
+' press can reset the ladder while keeping the overlay visible.
+sub _resetRetryCounters()
     m.retryCount             = 0
     m.manifestPatchAttempted = false
     m.isNimbleStream         = false
     m.pendingHeaders          = { ua: "", ref: "", cookie: "" }
     m.cacheWasAttempted      = false
     m.pendingRetryContent    = invalid
-    m.bandwidthProbeIndex    = 0
     m.softStepCount          = 0
     m.softStepBandwidth      = 0
     m.slowBufferStartTime    = invalid
@@ -76,11 +83,11 @@ sub _resetRetryState()
     m.loadingChannelIndex    = -1
     m.savedErrorMsg          = ""
     m.savedErrorStr          = ""
-    ' Stop LocalProxy so port 7171 is freed -- allows clean restart on return
+    ' Stop LocalProxy so port 7171 is freed — allows clean restart on return
     if m.localProxy <> invalid then
         if m.localProxy.status <> "idle" and m.localProxy.status <> "stopped" then
             print ">>> PROXY: Stopping LocalProxy on reset (was: "; m.localProxy.status; ")"
-            m.localProxy.stopProxy = true  ' signals running thread to exit cleanly
+            m.localProxy.stopProxy = true
         end if
         m.pendingProxyContent = invalid
         m.proxyOriginalUrl    = ""
@@ -94,17 +101,11 @@ sub _resetRetryState()
     cancelStreamRetryTimer()
     cancelCountdownTickTimer()
     cancelSettingsCacheTimer()
-    hideReconnectingOverlay()
 end sub
 
 ' ---------- Internal: apply a content node and start playback ----------
 
 sub _applyContentAndPlay(content as Object)
-    ' Always enable cookies -- cookieCheck=1 stores hlsSession which is needed
-    ' for cookie-auth segment requests (segments without ?session= token)
-    m.previewVideo.EnableCookies()
-    m.previewVideo.SetCertificatesFile("common:/certs/ca-bundle.crt")
-    m.previewVideo.InitClientCertificates()
     stopPreviewVideo()
     m.previewVideo.content = invalid
     ' Apply headers via AddHeader BEFORE content assignment
@@ -140,15 +141,15 @@ sub playPreviewChannel(channelIndex as Integer)
     end if
     if channel = invalid or channel.url = invalid then return
 
+    ' Same pin-removal as playChannel() (see comment there). Safe here too --
+    ' the pin lives at the tail of flatChannelList, so removing it doesn't
+    ' shift channelIndex/currentChannelIndex, which both refer to a position
+    ' earlier in the list (this genuinely different channel).
+    _clearNowPlayingPinIfChanging(channel.url)
+    m.replayFallbackActive = false   ' a real channel action -- exit replay-toggle mode
+
     ' Skip reload if already actively playing this channel
     if _isChannelActivelyLoaded(channel.url) then return
-
-    ' Save outgoing channel as previous before reset clears loading index
-    if m.loadingChannelIndex >= 0 then
-        m.previousChannelIndex = m.loadingChannelIndex
-    else if m.currentChannelIndex >= 0 then
-        m.previousChannelIndex = m.currentChannelIndex
-    end if
 
     _resetRetryState()
     hidePreviewError()
@@ -161,21 +162,33 @@ sub playPreviewChannel(channelIndex as Integer)
     if m.previewChannelNameContainer <> invalid then m.previewChannelNameContainer.visible = true
     _updatePreviewLogo(channel)
 
-    ' Check settings cache first
+    ' Check settings cache. For proxy channels, skip the doomed plain URL
+    ' attempt and go straight to the proxy.
     cached = lookupCachedSettings(channel.url)
     if cached <> invalid then
-        previewContent = buildContentFromCache(cached, channel)
-        previewContent.MaxBandwidth = 5000000   ' conservative cap for preview even when cached
-        print ">>> PREVIEW: Using cached settings"
+        if cached.useProxy = true then
+            print ">>> PREVIEW: Cache says useProxy=true — starting proxy immediately"
+            m.cacheWasAttempted      = true
+            m.manifestPatchAttempted = true
+            m.pendingHeaders         = _resolveHeaders(channel)
+            _setPreviewGeometry()   ' must be called before proxy starts playing
+            _startLocalProxy(channel.url, _makeContentNode(channel.url, channel.title, channel))
+        else
+            previewContent = buildContentFromCache(cached, channel)
+            previewContent.MaxBandwidth = 5000000
+            m.cacheWasAttempted = true
+            print ">>> PREVIEW: Using cached settings"
+            _setPreviewGeometry()
+            m.pendingHeaders = _resolveHeaders(channel)
+            _applyContentAndPlay(previewContent)
+        end if
     else
         previewContent = _makeContentNode(channel.url, channel.title, channel)
         previewContent.MaxBandwidth = 5000000
+        _setPreviewGeometry()
+        m.pendingHeaders = _resolveHeaders(channel)
+        _applyContentAndPlay(previewContent)
     end if
-
-    _setPreviewGeometry()
-    ' Set pending headers so _applyContentAndPlay can AddHeader correctly
-    m.pendingHeaders = _resolveHeaders(channel)
-    _applyContentAndPlay(previewContent)
 end sub
 
 sub stopPreviewVideo()
@@ -193,19 +206,51 @@ end sub
 ' sending a second selection of that same channel straight to fullscreen
 ' ("Double OK") instead of actually retrying the load.
 function _isChannelActivelyLoaded(url as String) as Boolean
-    if m.previewVideo = invalid or m.previewVideo.content = invalid then return false
+    if m.previewVideo = invalid then return false
     state = m.previewVideo.state
-    if state <> "playing" and state <> "buffering" and state <> "paused" then return false
-    ' Direct URL match (normal streams)
-    if m.previewVideo.content.url = url then return true
-    ' Proxy streams: content.url is http://IP:7171/master but the channel url
-    ' is the original https:// stream. Match via m.proxyOriginalUrl.
-    if m.proxyOriginalUrl <> "" and m.proxyOriginalUrl = url then return true
+    if state = "playing" or state = "buffering" or state = "paused" then
+        if m.previewVideo.content = invalid then return false
+        ' Direct URL match (normal streams)
+        if m.previewVideo.content.url = url then return true
+        ' Proxy streams: content.url is channel.url (set in _startLocalProxy) while the
+        ' proxy is starting, but state won't be playing/buffering yet — the state check
+        ' above correctly gates this. Once the proxy is playing, content.url = proxy URL
+        ' and m.proxyOriginalUrl = channel.url — match via that.
+        if m.proxyOriginalUrl <> "" and m.proxyOriginalUrl = url then return true
+        return false
+    end if
+    ' Not currently playing/buffering/paused — e.g. between an error and the
+    ' retry ladder's first visible step (the ~1.5s error-delay pause in
+    ' ErrorDelayTimer.brs), or the video engine briefly resetting its own
+    ' state string right after a failure. Rather than gate on the exact
+    ' state value (which can bounce unpredictably, e.g. through "none",
+    ' right after an error and made this check unreliable), match on
+    ' m.loadingChannelIndex — it only gets cleared to -1 by an explicit
+    ' cancel or channel change, so it correctly tells us whether we're
+    ' still actively working on THIS channel regardless of the video
+    ' node's momentary state. Without this, a fast double-OK landing in
+    ' that gap looked like "channel not loaded" and restarted
+    ' playPreviewChannel() from scratch instead of expanding to fullscreen.
+    if m.loadingChannelIndex >= 0 and m.reconnectState <> "gaveup" then
+        if m.flatChannelList <> invalid and m.loadingChannelIndex < m.flatChannelList.Count() then
+            loadingChannel = m.flatChannelList[m.loadingChannelIndex]
+            if loadingChannel <> invalid and loadingChannel.url = url then return true
+        end if
+    end if
     return false
 end function
 
 sub playChannel(content as Object)
     hideChannelBar()
+
+    ' If a "now playing" pin is sitting at the tail of the grid (see
+    ' _resyncOrPinChannelAfterPlaylistSwitch() in Utils.brs) and this is a
+    ' genuinely different channel, remove it now -- it's gone the moment we
+    ' tune away from it. This runs before the resync block below so that
+    ' block re-derives m.currentChannelIndex against the already-updated
+    ' (post-removal) flatChannelList.
+    if content <> invalid and content.url <> invalid then _clearNowPlayingPinIfChanging(content.url)
+    m.replayFallbackActive = false   ' a real channel action -- exit replay-toggle mode
 
     ' Keep m.currentChannelIndex in sync with what's actually being played.
     ' Everything below (preview name/logo, cached-settings lookup, HTTP
@@ -252,30 +297,37 @@ sub playChannel(content as Object)
         startChannelLoadBufferTimer()
         print ">>> PLAY: "; content.title
 
-        ' Save the channel we're LEAVING as previous, before loadingChannelIndex is overwritten
-        if m.loadingChannelIndex >= 0 then
-            m.previousChannelIndex = m.loadingChannelIndex
-        end if
         m.loadingChannelIndex = m.currentChannelIndex
-
-        ' Check settings cache
-        cached = invalid
-        if channel <> invalid then cached = lookupCachedSettings(channel.url)
-        if cached <> invalid then
-            freshContent = buildContentFromCache(cached, channel)
-            freshContent.MaxBandwidth = 0
-            print ">>> PLAY: Using cached settings"
-        else
-            freshContent = _makeContentNode(content.url, content.title, channel)
-            freshContent.MaxBandwidth = 0
-        end if
 
         _resetRetryState()
         m.loadingChannelIndex = m.currentChannelIndex   ' restore after reset
 
-        ' Set pending headers for _applyContentAndPlay
-        m.pendingHeaders = _resolveHeaders(channel)
-        _applyContentAndPlay(freshContent)
+        ' Check settings cache AFTER reset so flags survive into the ladder.
+        cached = invalid
+        if channel <> invalid then cached = lookupCachedSettings(channel.url)
+        if cached <> invalid then
+            if cached.useProxy = true then
+                ' Proxy channel — skip the guaranteed-to-fail plain URL attempt
+                ' and go straight to the proxy. Saves one full error + delay cycle.
+                print ">>> PLAY: Cache says useProxy=true — starting proxy immediately"
+                m.cacheWasAttempted    = true
+                m.manifestPatchAttempted = true
+                m.pendingHeaders       = _resolveHeaders(channel)
+                _startLocalProxy(channel.url, _makeContentNode(channel.url, channel.title, channel))
+            else
+                freshContent = buildContentFromCache(cached, channel)
+                freshContent.MaxBandwidth = 0
+                m.cacheWasAttempted = true
+                print ">>> PLAY: Using cached settings"
+                m.pendingHeaders = _resolveHeaders(channel)
+                _applyContentAndPlay(freshContent)
+            end if
+        else
+            freshContent = _makeContentNode(content.url, content.title, channel)
+            freshContent.MaxBandwidth = 0
+            m.pendingHeaders = _resolveHeaders(channel)
+            _applyContentAndPlay(freshContent)
+        end if
     else
         print ">>> PLAY: Already playing, expanding to fullscreen"
     end if
@@ -346,7 +398,14 @@ end function
 ' missing/broken image would otherwise leave a blank or error-state square.
 sub _updatePreviewLogo(channel as Object)
     if m.previewChannelLogo = invalid then return
+    ' Store the channel this logo belongs to so the loadStatus fallback
+    ' uses the right category even if the user surfs away before it loads.
+    m.previewChannelLogoChannel = channel
+    m.previewChannelLogo.uri     = ""
+    m.previewChannelLogo.visible = false
     iconUrl = _bestIconUrl(channel)
-    m.previewChannelLogo.uri     = iconUrl
-    m.previewChannelLogo.visible = (iconUrl <> "")
+    if iconUrl <> "" then
+        m.previewChannelLogo.uri     = iconUrl
+        m.previewChannelLogo.visible = true
+    end if
 end sub

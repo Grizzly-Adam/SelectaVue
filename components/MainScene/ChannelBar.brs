@@ -1,6 +1,6 @@
 ' ==================== ChannelBar.brs ====================
 ' Bottom-third interactive bar shown in fullscreen: channel logo, name,
-' and four buttons (Favorite toggle, CC toggle, Details, Live/reload).
+' and five buttons (Favorite toggle, CC toggle, Live/reload, Details, Hide).
 '
 ' Replaces the old channel info banner (auto-shown on channel change) AND
 ' the OK options dialog (Audio Settings / Subtitles / Channel Details / Close).
@@ -9,13 +9,8 @@
 '
 ' State:
 '   m.barVisible    - true while the bar is shown
-'   m.barFocusIndex - which button is focused: 0=Favorite, 1=CC, 2=Live, 3=Details
-'   m.ccEnabled     - current captions on/off state. Treat as a cache, not a
-'                     source of truth — it's verified against previewVideo's
-'                     actual globalCaptionMode on boot and any time that
-'                     field changes (see _syncCCStateFromVideo() below),
-'                     since the system caption overlay can change captions
-'                     without going through this code at all.
+'   m.barFocusIndex - which button is focused: 0=Favorite, 1=CC, 2=Live, 3=Details, 4=Hide
+'   m.ccEnabled     - current captions on/off state, mirrors previewVideo.suppressCaptions
 '
 ' The bar auto-shows on every channel change in fullscreen (surf, replay-jump,
 ' playChannel/launch) and can also be toggled with OK. Whenever visible it owns
@@ -48,8 +43,9 @@ sub showChannelBar(channel as Object)
     if m.channelBarNameLabel <> invalid then m.channelBarNameLabel.text = cleanChannelTitle(channel)
     _updateChannelBarServerLabel()
     _updateChannelBarLogo(channel)
-    _syncCCStateFromVideo()
+    _syncCCButtonLabel()
     _syncFavoriteButtonLabel(channel)
+    _syncHideButtonIcon(channel)
 
     ' Always start on the first button rather than remembering wherever focus
     ' was left last time the bar was shown.
@@ -94,14 +90,14 @@ end sub
 
 sub channelBarFocusLeft()
     newIndex = m.barFocusIndex - 1
-    if newIndex < 0 then newIndex = 3
+    if newIndex < 0 then newIndex = 4
     _setBarFocusIndex(newIndex)
     _resetChannelBarTimer()
 end sub
 
 sub channelBarFocusRight()
     newIndex = m.barFocusIndex + 1
-    if newIndex > 3 then newIndex = 0
+    if newIndex > 4 then newIndex = 0
     _setBarFocusIndex(newIndex)
     _resetChannelBarTimer()
 end sub
@@ -132,6 +128,9 @@ sub channelBarActivate()
     else if m.barFocusIndex = 3 then
         hideChannelBar()
         showCurrentChannelInfo()
+    else if m.barFocusIndex = 4 then
+        toggleHideForCurrentChannel()
+        _resetChannelBarTimer()   ' bar stays visible — refresh its countdown
     end if
 end sub
 
@@ -159,6 +158,25 @@ sub _syncFavoriteButtonLabel(channel as Object)
     m.channelBarFavoriteIcon.blendColor = iif(isFav, "0xFFFFFFFF", ICON_DIM_COLOR())
 end sub
 
+' ---------- Hide toggle ----------
+' Shared by: the bar's Hide button only (no separate key binding, unlike
+' Favorite). Always acts on whatever channel is currently playing — see
+' toggleHideForCurrentChannel() in HiddenChannels.brs for the actual toggle
+' and tree/pin bookkeeping.
+'
+' Icon brightness is INVERTED from Favorite/CC above: there, bright means
+' "this toggle is on" (favorited/captions on). Here, bright means "this
+' channel is currently visible" (not hidden) — dimmed means hidden. Per
+' Adam: the icon reads as an eye, so bright/open-eye = showing, dim = hidden
+' reads more naturally than mapping brightness to "hidden" being the "on" state.
+
+sub _syncHideButtonIcon(channel as Object)
+    if m.channelBarHideIcon = invalid then return
+    isHidden = false
+    if channel <> invalid then isHidden = isChannelHidden(channel.url)
+    m.channelBarHideIcon.blendColor = iif(isHidden, ICON_DIM_COLOR(), "0xFFFFFFFF")
+end sub
+
 ' ---------- CC toggle ----------
 ' Simple on/off toggle, no sub-menu. Mirrors the old Subtitles dialog's
 ' "off" vs first-available-track behavior, but as a single button press.
@@ -167,18 +185,8 @@ sub _toggleCaptions()
     if m.previewVideo = invalid then return
     m.ccEnabled = not m.ccEnabled
     if m.ccEnabled then
-        m.previewVideo.suppressCaptions = false
-        ' Select the first available caption track, if any.
-        ' selectCaptionTrack expects the track's TrackName (string), not an
-        ' index — passing an integer here silently failed to select a track,
-        ' which is why captions only worked via the Roku system (*) menu.
-        tracks = m.previewVideo.availableCaptionTracks
-        if tracks <> invalid and tracks.Count() > 0 and tracks[0] <> invalid and tracks[0].TrackName <> invalid then
-            m.previewVideo.selectCaptionTrack = tracks[0].TrackName
-        end if
         m.previewVideo.globalCaptionMode = "On"
     else
-        m.previewVideo.suppressCaptions = true
         m.previewVideo.globalCaptionMode = "Off"
     end if
     _syncCCButtonLabel()
@@ -189,43 +197,11 @@ sub _syncCCButtonLabel()
     m.channelBarCCIcon.blendColor = iif(m.ccEnabled, "0xFFFFFFFF", ICON_DIM_COLOR())
 end sub
 
-' ---------- CC state sync (keeps m.ccEnabled truthful) ----------
-' m.ccEnabled is our own bookkeeping of on/off, mirrored in the bar's icon.
-' It can drift from the real video state in two places:
-'   1) App boot — the video node's globalCaptionMode field initializes to
-'      whatever the system Settings > Accessibility > Captions mode is
-'      set to, but m.ccEnabled used to always start hardcoded to false —
-'      so a device with system captions already on would boot with the
-'      icon showing "off" while captions were actually displaying.
-'   2) The Roku system caption overlay (* button while video is playing)
-'      lets the user change captions directly on the video node, bypassing
-'      our button entirely.
-' Rather than trust m.ccEnabled as the source of truth, this re-reads the
-' video node's actual globalCaptionMode and re-syncs m.ccEnabled + the icon
-' to match. Safe to call any time (boot, or from the field observer below).
-sub _syncCCStateFromVideo()
-    if m.previewVideo = invalid then return
-    mode = m.previewVideo.globalCaptionMode
-    if mode = invalid then mode = "Off"
-    m.ccEnabled = (mode = "On")
-    _syncCCButtonLabel()
-end sub
-
-' Observer callback for previewVideo's "globalCaptionMode" field (wired up
-' in MainScene.brs init()). Fires whether WE changed the field
-' (_toggleCaptions / _reapplyCaptionsIfEnabled) or the system overlay did —
-' either way m.ccEnabled and the icon get corrected to match reality.
-sub onGlobalCaptionModeChanged(event as Object)
-    _syncCCStateFromVideo()
-end sub
-
-' Called from ChannelNav.brs's checkState() when a new stream reaches
-' "playing" and m.ccEnabled is already true (user had captions on before
-' changing channels). Re-selects the first available track on the new
-' content — same logic as _toggleCaptions(), without flipping m.ccEnabled.
+' Re-applies captions when a new stream reaches "playing" if CC is enabled.
+' Needed because channel changes reset the Video node state.
 sub _reapplyCaptionsIfEnabled()
     if m.previewVideo = invalid then return
-    m.previewVideo.suppressCaptions = false
+    if not m.ccEnabled then return
     tracks = m.previewVideo.availableCaptionTracks
     if tracks <> invalid and tracks.Count() > 0 and tracks[0] <> invalid and tracks[0].TrackName <> invalid then
         m.previewVideo.selectCaptionTrack = tracks[0].TrackName
@@ -246,7 +222,12 @@ end sub
 
 sub _updateChannelBarLogo(channel as Object)
     if m.channelBarLogo = invalid then return
+    m.channelBarLogoChannel  = channel
+    m.channelBarLogo.uri     = ""
+    m.channelBarLogo.visible = false
     iconUrl = _bestIconUrl(channel)
-    m.channelBarLogo.uri     = iconUrl
-    m.channelBarLogo.visible = (iconUrl <> "")
+    if iconUrl <> "" then
+        m.channelBarLogo.uri     = iconUrl
+        m.channelBarLogo.visible = true
+    end if
 end sub

@@ -10,11 +10,16 @@ sub buildFlatChannelList()
         section = m.allChannels.getChild(i)
         if section = invalid then continue for
         if section.getChildCount() = 0 then
-            m.flatChannelList.Push(section)
+            ' Leaf node — only add if it has a url (skip bare section headers)
+            if section.url <> invalid and section.url <> "" then
+                m.flatChannelList.Push(section)
+            end if
         else
             for j = 0 to section.getChildCount() - 1
                 channel = section.getChild(j)
-                if channel <> invalid then m.flatChannelList.Push(channel)
+                if channel <> invalid and channel.url <> invalid and channel.url <> "" then
+                    m.flatChannelList.Push(channel)
+                end if
             end for
         end if
     end for

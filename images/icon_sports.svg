@@ -71,13 +71,13 @@
      id="circle3" />
   <!-- Ball seams -->
   <path
-     d="m 94,34 q -28,26 0,66 28,40 0,66"
+     d="m 93.777414,34 q -28,26 0,66 27.999996,40 0,66"
      fill="none"
      stroke="#024c48"
      stroke-width="5"
      id="path4" />
   <path
-     d="m 142,34 q -28,26 0,66 28,40 0,66"
+     d="m 147.78723,34 q -28,26 0,66 28,40 0,66"
      fill="none"
      stroke="#024c48"
      stroke-width="5"
