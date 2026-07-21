@@ -550,7 +550,7 @@
             color="0x024c48FF">
             <Label
                 id="reconnectActionLabel"
-                translation="[0, 8]"
+                translation="[0, 4]"
                 text="CANCEL"
                 font="font:SmallSystemFont"
                 color="0x8fcdc1FF"
