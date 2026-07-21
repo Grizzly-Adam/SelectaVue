@@ -16,23 +16,17 @@ sub retryStream(reason as String)
     end if
 
     m.retryCount = m.retryCount + 1
-    print ">>> RETRY "; m.retryCount; ": "; reason
+    print ">>> RETRY "; m.retryCount; ": "; reason; " (t="; _loadElapsedMs(); "ms)"
 
     channel = _currentChannel()
 
-    ' Strip _HLS_skip from URL — all steps work on the clean URL.
-    ' Also resolve proxy URLs back to the original channel URL — if the proxy
-    ' was playing and then errored, content.url is http://IP:7171/master which
-    ' is session-specific and useless as a cache key or retry base.
-    cleanUrl = content.url
-    if m.proxyOriginalUrl <> "" and Left(LCase(cleanUrl), 7) = "http://" and cleanUrl.InStr(":7171/") >= 0 then
+    ' Normalize the URL — resolves an active proxy session back to the
+    ' original channel URL and strips any _HLS_skip suffix — all retry steps
+    ' work from this clean base. See _normalizeChannelUrl() in Utils.brs.
+    if m.proxyOriginalUrl <> "" and Left(LCase(content.url), 7) = "http://" and content.url.InStr(":7171/") >= 0 then
         print ">>> RETRY: Resolving proxy URL to original: "; m.proxyOriginalUrl
-        cleanUrl = m.proxyOriginalUrl
     end if
-    sepPos = cleanUrl.InStr("&_HLS_skip")
-    if sepPos > 0 then cleanUrl = Left(cleanUrl, sepPos)
-    sepPos = cleanUrl.InStr("?_HLS_skip")
-    if sepPos > 0 then cleanUrl = Left(cleanUrl, sepPos)
+    cleanUrl = _normalizeChannelUrl(content.url)
 
     if m.retryCount = 1 then
         ' --- Step 0: try cached settings ---
@@ -98,6 +92,20 @@ sub retryStream(reason as String)
             retryStream(reason)
             return
         end if
+
+        ' ManifestPatcher fetches and parses HLS text manifests -- it has no
+        ' business being pointed at a raw continuous MPEG-TS feed (streamFormat
+        ' "ts"). _fetch() would block trying to read that stream to completion,
+        ' which for a live feed never happens, so this step would just sit on
+        ' a connection timeout instead of failing fast. Mark it attempted and
+        ' skip straight to the next step for these.
+        if content.streamFormat = "ts" then
+            print ">>> RETRY 2: Skipping ManifestPatcher — streamFormat=ts (raw MPEG-TS, not an HLS manifest)"
+            m.manifestPatchAttempted = true
+            retryStream(reason)
+            return
+        end if
+
         print ">>> RETRY 2: Running ManifestPatcher"
         showRetryStatus("Analyzing stream manifest...")
         m.manifestPatchAttempted = true

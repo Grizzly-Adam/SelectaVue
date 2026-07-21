@@ -5,9 +5,9 @@
 ' and the brief OK-keypress suppression right after a channel launch.
 '
 ' Timers managed in this file:
-'   stallTimer              - fires after 15s of no buffer progress → retryStream()
+'   stallTimer              - fires after 20s of no buffer progress → retryStream()
 '   slowBufferRecoveryTimer - restores full ABR after 30s of clean playback
-'   errorDelayTimer         - 4s pause before retrying on clean error
+'   errorDelayTimer         - 1.5s pause before retrying on clean error
 '   networkPollTimer        - 10s poll interval when network is down
 '   streamRetryTimer        - 30s retry interval when stream is down
 '   countdownTickTimer      - 1s tick to update countdown display
@@ -72,7 +72,7 @@ sub onBufferStall()
     status = m.previewVideo.bufferingStatus
     if status <> invalid and status.percentage <> invalid then pct = status.percentage
     if pct >= 100 then return
-    print ">>> STALL: Buffer stalled at "; pct; "% — calling retryStream()"
+    print ">>> STALL: Buffer stalled at "; pct; "% — calling retryStream() (t="; _loadElapsedMs(); "ms)"
     retryStream("Buffer stall at " + pct.ToStr() + "%")
 end sub
 

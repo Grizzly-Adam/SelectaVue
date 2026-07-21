@@ -135,6 +135,7 @@ sub reloadCurrentChannel()
     stopPreviewVideo()
     _resetRetryCounters()   ' reset ladder state but keep overlay visible for RETRY flow
     m.loadingChannelIndex = m.currentChannelIndex
+    m.channelLoadTimer = CreateObject("roTimespan")
 
     ' Check cache — proxy channels can restart immediately without a doomed URL attempt
     cached = lookupCachedSettings(channel.url)
@@ -167,7 +168,7 @@ sub reloadCurrentPlaylist()
         ' timing ever changes, this stays consistent with its sibling
         ' instead of silently reintroducing a stale-restore path here only.
         m.pendingChannelUrl = invalid
-        _captureChannelBeforePlaylistSwitch()
+        _captureCurrentlyPlayingChannel()
         loadPlaylist(m.playlists[idx].url)
     end if
 end sub
@@ -271,9 +272,18 @@ sub checkState()
 
         ' Guard 3: error URL doesn't match what we're currently loading.
         ' Fired from an abandoned channel after the user surfed away.
+        ' RetryLadder's compat step (retryCount=1) appends &_HLS_skip=NO to
+        ' the URL, and an active proxy session's content.url is a
+        ' session-specific http://IP:7171/master rather than the channel's
+        ' real URL — neither of which _currentLoadingChannelUrl() ever has.
+        ' Normalize both the same way before comparing, or every error from
+        ' that retry step's own attempt (or a live proxy session) looks like
+        ' it belongs to a different channel and gets discarded here,
+        ' silently stalling the ladder forever.
         if m.previewVideo.content <> invalid then
             currentLoadingChannel = _currentLoadingChannelUrl()
-            if currentLoadingChannel <> "" and m.previewVideo.content.url <> currentLoadingChannel then
+            errorUrl = _normalizeChannelUrl(m.previewVideo.content.url)
+            if currentLoadingChannel <> "" and errorUrl <> currentLoadingChannel then
                 print ">>> STATE ERROR: Stale error for abandoned channel — ignoring"
                 return
             end if

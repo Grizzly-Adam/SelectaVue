@@ -43,6 +43,28 @@ sub onManifestPatched()
     if content = invalid then return
 
     if result.error <> "" then
+        if result.error = "Empty response from server" then
+            ' Direct proof the origin didn't respond at all to a plain HTTP
+            ' fetch -- not a bandwidth or adaptation problem the remaining
+            ' ladder steps could plausibly fix, so skip the 8Mbps probe
+            ' (and the ~20s stall wait it'd otherwise burn) and short-circuit
+            ' straight to the same outcome the ladder would reach anyway once
+            ' exhausted -- see the "Ladder exhausted" branch in
+            ' RetryLadder.brs, mirrored here.
+            print ">>> PATCHER: Empty response from server -- source is dead, skipping remaining retries"
+            hideBufferBar()
+            cancelStallTimer()
+            if m.streamWasPlaying then
+                print ">>> PATCHER: Entering outage loop (stream was playing)"
+                _enterOutageLoop()
+            else
+                print ">>> PATCHER: Giving up (never played)"
+                _cancelNamedTimer("sessionRefreshTimer")
+                showGaveUpState(getFriendlyError(result.error))
+                if m.isPlayingVideo then resetFullscreenInactivityTimer() else resetGridInactivityTimer()
+            end if
+            return
+        end if
         print ">>> PATCHER: Fetch failed -- escalating to 8Mbps probe"
         m.retryCount = 2   ' retryStream() increments to 3 = 8Mbps step
         m.manifestPatchAttempted = true

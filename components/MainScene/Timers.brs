@@ -7,35 +7,17 @@
 '   gridInactivityTimer       - auto-fullscreen or screensaver after 45s on grid
 '   fullscreenInactivityTimer - screensaver shade after 45s idle in fullscreen
 '   overlayInactivityTimer    - auto-dismiss quick-menu after 30s
-'   optionsDialogTimer        - auto-close video options dialog after 30s
+'   optionsDialogTimer        - auto-close video options dialog after 90s
 '
-' onDialogChanged() below pauses gridInactivityTimer/fullscreenInactivityTimer
-' entirely for as long as a StandardKeyboardDialog (playlist name/URL entry)
-' is up — otherwise a slow typist could get yanked into fullscreen or dimmed
-' by the screensaver mid-dialog. See also PlaybackHealthTimers.brs
+' onDialogChanged()/onPhoneKeyboardDialogShowChanged() below pause
+' gridInactivityTimer/fullscreenInactivityTimer entirely for as long as a
+' text-entry dialog (playlist name/URL entry) is up — otherwise a slow
+' typist could get yanked into fullscreen or dimmed by the screensaver
+' mid-dialog. See also PlaybackHealthTimers.brs
 ' (stall/error-delay/network/stream-retry/countdown/OK-suppression),
 ' SessionRefreshTimer.brs (session-token refresh), and SettingsCache.brs
 ' (settingsCacheTimer, a 2min promotion delay — managed entirely in that
 ' file, not here).
-
-' ---------- Loading dialog: active-input dismissal (grid only) ----------
-' Called from onKeyEvent (OK/back/up/down/left) and from the itemSelected/
-' itemFocused observers (OK/up/down are natively consumed by a focused
-' LabelList before they'd ever reach onKeyEvent). Just hides the overlay —
-' m.loadingDialogVisible stays true since the fetch task is still running;
-' SetContent() clears it properly once the load actually finishes.
-sub _dismissLoadingDialogForInput()
-    print ">>> LOADDLG: _dismissLoadingDialogForInput called"
-    if m.loadingOverlay       <> invalid then m.loadingOverlay.visible       = false
-    if m.loadingOverlayBorder <> invalid then m.loadingOverlayBorder.visible = false
-    if m.screensaverOverlay <> invalid and (m.reconnectOverlay = invalid or not m.reconnectOverlay.visible) then
-        m.screensaverOverlay.visible = false
-    end if
-    if m.videoHiddenForLoadingDialog then
-        if m.previewVideo <> invalid then m.previewVideo.visible = true
-        m.videoHiddenForLoadingDialog = false
-    end if
-end sub
 
 ' ---------- Screensaver / dim-shader dismissal ----------
 ' Shared by onKeyEvent AND by the itemFocused/itemSelected observers below.
@@ -49,15 +31,12 @@ end sub
 ' stop and not process the key/event any further).
 function _dismissScreensaverIfVisible() as Boolean
     if m.screensaverOverlay = invalid or not m.screensaverOverlay.visible then return false
-    print ">>> LOADDLG: _dismissScreensaverIfVisible -- shade was visible, dismissing (loadingDialogVisible="; m.loadingDialogVisible; ")"
+    print ">>> LOADDLG: _dismissScreensaverIfVisible -- shade was visible, dismissing"
     ' The reconnect dialog owns the shade for as long as it's up, in any
     ' state — cancelling/dismissing it goes through hideReconnectingOverlay
     ' (which explicitly turns the shade off itself), not this generic path.
     if m.reconnectOverlay <> invalid and m.reconnectOverlay.visible then return false
     m.screensaverOverlay.visible = false
-    if m.loadingDialogVisible then
-        _showLoadingDialog()   ' restore the modal loading dialog — the fetch task never stopped
-    end if
     if m.isPlayingVideo then
         resetFullscreenInactivityTimer()
     else
@@ -74,6 +53,53 @@ end function
 sub onDialogChanged()
     dlg = m.top.dialog
     if dlg <> invalid and dlg.subtype() = "StandardKeyboardDialog" then
+        m.textEntryDialogVisible = true
+        _cancelNamedTimer("gridInactivityTimer")
+        _cancelNamedTimer("fullscreenInactivityTimer")
+    else if m.textEntryDialogVisible then
+        m.textEntryDialogVisible = false
+        if m.isPlayingVideo then
+            resetFullscreenInactivityTimer()
+        else
+            resetGridInactivityTimer()
+        end if
+    end if
+end sub
+
+' Companion to onDialogChanged() above -- same inactivity-timer pause/resume
+' protection, but for PhoneKeyboardDialog. That dialog is a permanent child
+' node (see MainScene.xml) rather than something assigned to m.top.dialog,
+' so onDialogChanged's subtype check above never sees it open or close.
+' Without this, a slow typist using the on-screen keyboard or the phone/QR
+' entry could get yanked into fullscreen or dimmed by the screensaver
+' mid-entry -- exactly the bug onDialogChanged was originally written to
+' prevent for the keyboard dialog this one replaced.
+sub onPhoneKeyboardDialogShowChanged()
+    if m.phoneKeyboardDialog = invalid then return
+    if m.phoneKeyboardDialog.show then
+        m.textEntryDialogVisible = true
+        _cancelNamedTimer("gridInactivityTimer")
+        _cancelNamedTimer("fullscreenInactivityTimer")
+    else if m.textEntryDialogVisible then
+        m.textEntryDialogVisible = false
+        if m.isPlayingVideo then
+            resetFullscreenInactivityTimer()
+        else
+            resetGridInactivityTimer()
+        end if
+    end if
+end sub
+
+' Companion to onDialogChanged() above -- same inactivity-timer pause/resume,
+' but for ThemedMenuDialog (the playlist options menu). Reuses
+' m.textEntryDialogVisible even though this isn't text entry -- the flag's
+' actual contract (pause grid/fullscreen inactivity while a modal custom
+' dialog is up) already covers PhoneKeyboardDialog below for the same
+' reason. Without this, 45s of no input while the menu is up would yank the
+' grid into fullscreen underneath it.
+sub onThemedMenuDialogShowChanged()
+    if m.themedMenuDialog = invalid then return
+    if m.themedMenuDialog.show then
         m.textEntryDialogVisible = true
         _cancelNamedTimer("gridInactivityTimer")
         _cancelNamedTimer("fullscreenInactivityTimer")
@@ -131,7 +157,10 @@ sub onGridInactivity()
         m.top.setFocus(true)
         if m.currentChannelIndex >= 0 and m.flatChannelList <> invalid and m.currentChannelIndex < m.flatChannelList.Count() then
             channel = m.flatChannelList[m.currentChannelIndex]
-            if channel <> invalid then showChannelBar(channel)
+            if channel <> invalid then
+                m.playingChannel = channel
+                showChannelBar()
+            end if
         end if
         saveLastState()
         resetFullscreenInactivityTimer()
@@ -178,10 +207,18 @@ end sub
 ' ---------- Options dialog auto-close ----------
 
 sub resetOptionsDialogTimer()
-    _startNamedTimer("optionsDialogTimer", 30.0, false, "onOptionsDialogTimeout")
+    _startNamedTimer("optionsDialogTimer", 90.0, false, "onOptionsDialogTimeout")
 end sub
 
 sub onOptionsDialogTimeout()
     m.optionsDialogTimer = invalid
-    if m.top.dialog <> invalid then m.top.dialog.close = true
+    if m.themedMenuDialog <> invalid and m.themedMenuDialog.show then
+        _closeThemedMenuDialog()
+        _returnToPlaylistPanel()
+    else
+        _closeThemedMessageDialog()
+        if m.previewVideo <> invalid then m.previewVideo.setFocus(false)
+        m.themedMessageDialog.setFocus(false)
+        m.top.setFocus(true)
+    end if
 end sub

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Themed message popup: title + wrapped message + 1-2 buttons side by side.
+    Matches the WelcomeDialog/PhoneKeyboardDialog visual language (teal
+    border, dark panel, action-key button style) but sized as a centered
+    popup rather than full-screen. Replaces the stock Roku Dialog node (via
+    _showSimpleDialog) for the cases where its native title-divider didn't
+    match this app's theme -- see _showThemedMessageDialog() in Utils.brs.
+
+    Used for: playlist Name/URL Required validation errors, and the channel
+    information dialog.
+
+    Public interface:
+        dialogTitle    (string, write)
+        message        (string, write) - wraps within the message area
+        buttons        (array of strings, write) - 1 or 2 button labels,
+                       rendered side by side, equal width
+        dialogWidth    (float, write) - panel width; centers itself on screen
+        dialogHeight   (float, write) - panel height
+        buttonSelected (integer, read, alwaysNotify) - index of pressed button
+        show           (boolean, write) - true opens (rebuilding buttons for
+                       the current width/height/buttons), false closes
+-->
+<component name="ThemedMessageDialog" extends="Group">
+    <interface>
+        <field id="dialogTitle"    type="string"  value=""/>
+        <field id="message"        type="string"  value=""/>
+        <field id="buttons"        type="array"   value="[]"/>
+        <field id="dialogWidth"    type="float"   value="700"/>
+        <field id="dialogHeight"   type="float"   value="280"/>
+        <field id="messageAlign"   type="string"  value="center"/>
+        <field id="buttonSelected" type="integer" value="-1" alwaysNotify="true"/>
+        <field id="show"           type="boolean" value="false" onChange="onShowChanged"/>
+    </interface>
+
+    <script type="text/brightscript" uri="pkg:/components/ThemedMessageDialog/ThemedMessageDialog.brs"/>
+
+    <children>
+    <Rectangle id="tmdBorder" translation="[0, 0]" width="700" height="280" color="0x8fcdc1FF" visible="false">
+        <Rectangle id="tmdPanel" translation="[6, 6]" color="0x024c48FF">
+            <!-- Title bar: full panel width, border-colored, dark-green centered text -->
+            <Rectangle id="tmdTitleBox" translation="[0, 0]" height="80" color="0x8fcdc1FF">
+                <Label id="tmdTitleLabel"
+                    height="80"
+                    horizAlign="center"
+                    vertAlign="center"
+                    font="font:LargeBoldSystemFont"
+                    color="0x024c48FF"/>
+            </Rectangle>
+            <Label id="tmdMessageLabel"
+                translation="[32, 150]"
+                wrap="true"
+                font="font:MediumSystemFont"
+                color="0xE8F5F3FF"/>
+            <!-- Dynamically populated with button border/fill/label groups in .brs -->
+            <Group id="tmdButtonGroup"/>
+        </Rectangle>
+    </Rectangle>
+    </children>
+</component>

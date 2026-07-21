@@ -2,44 +2,8 @@
 ' Single onKeyEvent entry point: handles the reconnect-dialog intercept,
 ' gave-up state, stream-retry/screensaver dismissal, and inactivity-timer
 ' resets, then dispatches to FullscreenInput.brs or GridInput.brs.
-' (Fullscreen and grid key handling live in their own files — see those
-' for the full key map; only the cross-cutting dialog/overlay logic stays here.)
-'
-' Key map summary:
-'
-' FULLSCREEN (channel bar hidden):
-'   back        → exit to grid
-'   left        → toggle quick channel menu
-'   right       → reload current stream
-'   up          → previous channel (also shows the channel bar)
-'   down        → next channel (also shows the channel bar)
-'   OK          → show channel bar
-'   options (*) → toggle favorite on current channel
-'   play        → pause / resume
-'   replay      → jump to previously watched channel (also shows the channel bar)
-'
-' FULLSCREEN (channel bar visible — bar owns left/right/OK):
-'   back        → dismiss the bar only
-'   left/right  → move focus between bar buttons (CC / Details / Live), wraps around
-'   OK          → activate the focused button
-'   up/down     → still change channel — bar refreshes for the new channel
-'   options (*) → toggle favorite on current channel
-'   play        → pause / resume (unaffected by the bar)
-'   replay      → jump to previously watched channel (unaffected by the bar)
-'   (auto-hides after 4s of no input; bar and quick channel menu are mutually exclusive)
-'
-' GRID (channel list focused):
-'   back        → return to playing preview channel (if not already there); else open playlist panel
-'   left        → open playlist panel
-'   right       → go fullscreen with current preview (if playing)
-'   OK          → load preview / go fullscreen
-'   replay      → jump focus to previously watched channel
-'
-' GRID (playlist panel focused):
-'   back        → go fullscreen if preview is playing; else consume
-'   right       → move focus to channel list
-'   options     → show playlist options
-'   replay      → reload current playlist
+' (Full key maps for fullscreen/grid live in those files. Reconnect-dialog
+' key map below since that logic lives here.)
 '
 ' RECONNECT DIALOG (actively retrying — steps 0-5 of the retry ladder):
 '   GRID:
@@ -67,26 +31,15 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
     ' Network lockout — all input blocked while waiting for network
     if m.reconnectState = "network" then return true
 
-    ' Loading overlay (grid only): OK/back dismiss and stop there — don't
-    ' let them act on whatever's focused in the grid underneath. Up/down/
-    ' left dismiss too but still fall through to their normal handling, so
-    ' the grid can be browsed while the fetch keeps running in the
-    ' background. OK/up/down are also handled in onChannelSelected/
-    ' onChannelFocused/onPlaylistSelected/onPlaylistFocused since a focused
-    ' LabelList consumes those natively before they'd ever reach here.
+    ' Loading overlay (grid only): NOT dismissable -- blocks every key until
+    ' the fetch actually finishes and _hideLoadingDialog() is called (from
+    ' SetContent()'s completion handler). Home still exits the app since
+    ' that's handled by the OS, not here. OK/up/down are also blocked in
+    ' onChannelSelected/onChannelFocused/onPlaylistSelected/onPlaylistFocused
+    ' since a focused LabelList consumes those natively before they'd ever
+    ' reach here.
     if m.loadingDialogVisible and not m.isPlayingVideo then
-        if m.suppressLoadingDialogDismissOnce then
-            m.suppressLoadingDialogDismissOnce = false
-            print ">>> LOADDLG: onKeyEvent -- suppressing dismiss for key="; key; " (trailing echo of the press that just started the load)"
-            return true
-        end if
-        if key = "OK" or key = "back" then
-            _dismissLoadingDialogForInput()
-            return true
-        else if key = "up" or key = "down" or key = "left" then
-            _dismissLoadingDialogForInput()
-            ' fall through to normal grid handling below
-        end if
+        return true
     end if
 
     ' Reconnect overlay visible and actively retrying (not gave-up, not outage loop, not network wait)

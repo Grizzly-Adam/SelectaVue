@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Themed menu popup: title + a vertical list of selectable buttons (up/down
+    to move focus, OK to select). Matches the WelcomeDialog/PhoneKeyboardDialog
+    visual language (teal border, dark panel, action-key button style) but
+    sized as a centered popup rather than full-screen. Replaces the stock
+    Roku Dialog node (via _showSimpleDialog's buttons array) for the
+    playlist options menu -- see _showThemedMenuDialog() in Utils.brs.
+
+    Panel height is computed automatically from the button count, so callers
+    only need to set dialogWidth.
+
+    Public interface:
+        dialogTitle    (string, write)
+        buttons        (array of strings, write) - one row per entry, in order
+        dialogWidth    (float, write) - panel width; centers itself on screen
+        buttonSelected (integer, read, alwaysNotify) - index of pressed button
+        show           (boolean, write) - true opens (rebuilding the button
+                       list and re-measuring height), false closes
+-->
+<component name="ThemedMenuDialog" extends="Group">
+    <interface>
+        <field id="dialogTitle"    type="string"  value=""/>
+        <field id="buttons"        type="array"   value="[]"/>
+        <field id="dialogWidth"    type="float"   value="640"/>
+        <field id="buttonSelected" type="integer" value="-1" alwaysNotify="true"/>
+        <field id="show"           type="boolean" value="false" onChange="onShowChanged"/>
+    </interface>
+
+    <script type="text/brightscript" uri="pkg:/components/ThemedMenuDialog/ThemedMenuDialog.brs"/>
+
+    <children>
+    <Rectangle id="tmnBorder" translation="[0, 0]" width="640" height="300" color="0x8fcdc1FF" visible="false">
+        <Rectangle id="tmnPanel" translation="[6, 6]" color="0x024c48FF">
+            <!-- Title bar: full panel width, border-colored, dark-green centered text -->
+            <Rectangle id="tmnTitleBox" translation="[0, 0]" height="80" color="0x8fcdc1FF">
+                <Label id="tmnTitleLabel"
+                    height="80"
+                    horizAlign="center"
+                    vertAlign="center"
+                    font="font:LargeBoldSystemFont"
+                    color="0x024c48FF"/>
+            </Rectangle>
+            <!-- Dynamically populated with button border/fill/label groups in .brs -->
+            <Group id="tmnButtonGroup"/>
+        </Rectangle>
+    </Rectangle>
+    </children>
+</component>

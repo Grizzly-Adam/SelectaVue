@@ -280,34 +280,120 @@ end function
 
 sub onChannelBarLogoStatus()
     if m.channelBarLogo = invalid then return
-    if m.channelBarLogo.loadStatus <> "failed" then return
-    if Left(m.channelBarLogo.uri, 4) = "pkg:" then return
+    status = m.channelBarLogo.loadStatus
+    if status <> "failed" and status <> "ready" then return
+    ' A newer _updateChannelBarLogo() call may have already reassigned .uri
+    ' to a different channel's logo since this event's fetch was kicked off
+    ' (e.g. fast channel surfing) -- if so this event is for a request that
+    ' no longer matches what's on screen, so it must be ignored outright.
+    ' Without this check a late "failed" for an OLD channel could stomp a
+    ' NEW channel's already-loading (or already succeeded) logo.
+    if m.channelBarLogo.uri <> m.channelBarLogoRequestedUri then
+        print ">>> ICON: channelBarLogo event for a superseded request -- ignoring (uri="; m.channelBarLogo.uri; " requested="; m.channelBarLogoRequestedUri; ")"
+        return
+    end if
     channel = m.channelBarLogoChannel
     if channel = invalid then return
     current = _currentChannel()
     if current <> invalid and channel.url <> invalid and channel.url <> current.url then
-        print ">>> ICON: channelBarLogo stale — ignoring"
+        if status = "failed" then print ">>> ICON: channelBarLogo stale — ignoring"
         return
     end if
+
+    if status = "ready" then
+        ' Successful load -- remember it so previewChannelLogo can reuse this
+        ' exact result on the next grid<->fullscreen switch for this channel
+        ' instead of fetching the same remote image again.
+        if channel.url <> invalid then
+            m.iconResolvedUrl = channel.url
+            m.iconResolvedUri = m.channelBarLogo.uri
+        end if
+        return
+    end if
+
+    ' status = "failed" from here on
+    if Left(m.channelBarLogo.uri, 4) = "pkg:" then return
+
+    ' Both bar and preview logos fetch the same remote URL independently and
+    ' close together in time (see _updateChannelBarLogo/_updatePreviewLogo),
+    ' which is two concurrent requests for the identical image -- a known
+    ' source of one of the pair spuriously reporting "failed" on Roku even
+    ' though the URL is genuinely fine. If the sibling preview logo is
+    ' already showing this exact URL and hasn't itself fallen back to a
+    ' pkg: fallback, trust that over this node's own failure and retry once
+    ' (a fresh, non-concurrent attempt) before giving up for real.
+    attemptedUrl = m.channelBarLogo.uri
+    if not m.channelBarLogoRetried and m.previewChannelLogo <> invalid then
+        siblingUri = m.previewChannelLogo.uri
+        if siblingUri = attemptedUrl and Left(siblingUri, 4) <> "pkg:" then
+            print ">>> ICON: channelBarLogo failed but preview logo has the same URL fine -- retrying once"
+            m.channelBarLogoRetried = true
+            m.channelBarLogo.uri = ""
+            m.channelBarLogo.uri = attemptedUrl
+            return
+        end if
+    end if
+
     fallback = _categoryIconUrl(channel)
     print ">>> ICON: channelBarLogo failed, falling back to "; fallback
     m.channelBarLogo.uri     = fallback
     m.channelBarLogo.visible = true
+    if channel.url <> invalid then
+        m.iconResolvedUrl = channel.url
+        m.iconResolvedUri = fallback
+    end if
 end sub
 
 sub onPreviewLogoStatus()
     if m.previewChannelLogo = invalid then return
-    if m.previewChannelLogo.loadStatus <> "failed" then return
-    if Left(m.previewChannelLogo.uri, 4) = "pkg:" then return
+    status = m.previewChannelLogo.loadStatus
+    if status <> "failed" and status <> "ready" then return
+    ' See onChannelBarLogoStatus() above -- same stale-request guard.
+    if m.previewChannelLogo.uri <> m.previewChannelLogoRequestedUri then
+        print ">>> ICON: previewChannelLogo event for a superseded request -- ignoring (uri="; m.previewChannelLogo.uri; " requested="; m.previewChannelLogoRequestedUri; ")"
+        return
+    end if
     channel = m.previewChannelLogoChannel
     if channel = invalid then return
     current = _currentChannel()
     if current <> invalid and channel.url <> invalid and channel.url <> current.url then
-        print ">>> ICON: previewChannelLogo stale — ignoring"
+        if status = "failed" then print ">>> ICON: previewChannelLogo stale — ignoring"
         return
     end if
+
+    if status = "ready" then
+        ' Mirror of onChannelBarLogoStatus() above.
+        if channel.url <> invalid then
+            m.iconResolvedUrl = channel.url
+            m.iconResolvedUri = m.previewChannelLogo.uri
+        end if
+        return
+    end if
+
+    ' status = "failed" from here on
+    if Left(m.previewChannelLogo.uri, 4) = "pkg:" then return
+
+    ' Same reasoning as onChannelBarLogoStatus() above, mirrored: trust the
+    ' bar logo over this node's own failure if it's already showing this
+    ' exact URL fine, and retry once before actually falling back.
+    attemptedUrl = m.previewChannelLogo.uri
+    if not m.previewChannelLogoRetried and m.channelBarLogo <> invalid then
+        siblingUri = m.channelBarLogo.uri
+        if siblingUri = attemptedUrl and Left(siblingUri, 4) <> "pkg:" then
+            print ">>> ICON: previewChannelLogo failed but bar logo has the same URL fine -- retrying once"
+            m.previewChannelLogoRetried = true
+            m.previewChannelLogo.uri = ""
+            m.previewChannelLogo.uri = attemptedUrl
+            return
+        end if
+    end if
+
     fallback = _categoryIconUrl(channel)
     print ">>> ICON: previewChannelLogo failed, falling back to "; fallback
     m.previewChannelLogo.uri     = fallback
     m.previewChannelLogo.visible = true
+    if channel.url <> invalid then
+        m.iconResolvedUrl = channel.url
+        m.iconResolvedUri = fallback
+    end if
 end sub

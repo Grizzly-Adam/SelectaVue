@@ -1,31 +1,16 @@
 ' ==================== ManifestPatcher.brs ====================
-' Task node: fetches and recursively patches HLS manifests to fix
-' Roku's "no valid bitrates" and "malformed data" errors.
+' Task node: fetches and recursively patches HLS manifests to fix Roku's
+' "no valid bitrates" and "malformed data" errors.
 '
-' Two-level unified approach:
-'   Level 1 — master/variant playlist:
-'     - Fix missing/zero BANDWIDTH
-'     - Strip LL-HLS tags
-'     - For each variant URL: fetch and patch it (Level 2)
-'     - Rewrite variant URLs to point to patched tmp: files
-'   Level 2 — media playlist:
-'     - Rewrite relative segment URLs to absolute
-'     - Add EXT-X-VERSION:6 if fMP4 segments detected
-'     - Preserve/rewrite EXT-X-MAP URI to absolute
-'   Flat manifest (no EXT-X-STREAM-INF):
-'     - Patch as media playlist (Level 2)
-'     - Wrap in synthetic variant pointing to patched media playlist
-'   Flussonic tracks-vXaX/mono.m3u8:
-'     - Redirect to index.m3u8 before processing
+' Level 1 (master/variant): fix missing/zero BANDWIDTH, strip LL-HLS tags,
+' fetch+patch each variant (Level 2), rewrite variant URLs to patched tmp: files.
+' Level 2 (media playlist): relative segment URLs -> absolute, add
+' EXT-X-VERSION:6 for fMP4, absolutize EXT-X-MAP URI.
+' Flat manifest (no EXT-X-STREAM-INF): patch as media playlist, wrap in a
+' synthetic variant. Flussonic tracks-vXaX/mono.m3u8: redirect to index.m3u8 first.
 '
-' Writes up to two tmp: files:
-'   tmp:/patched.m3u8       - master variant playlist
-'   tmp:/patched_media.m3u8 - patched media playlist (when needed)
-'
-' result fields:
-'   url     - URL to pass to video node
-'   patched - true if anything was rewritten
-'   error   - non-empty if fetch completely failed
+' Writes tmp:/patched.m3u8 (master) and tmp:/patched_media.m3u8 (media, if needed).
+' result fields: url, patched (bool), error (non-empty if fetch failed).
 
 sub init()
     m.top.functionName = "patchManifest"
@@ -77,12 +62,9 @@ sub patchManifest()
     print ">>> PATCHER INSPECT: hasVariants="; hasVariants; " isFmp4="; _bodyHasFmp4Segments(body); " hasLLHLS="; (body.InStr("EXT-X-PART") >= 0)
     print ">>> PATCHER MANIFEST FIRST 800: "; Left(body, 800)
 
-    ' ---------- Flussonic live stream detection ----------
-    ' Flussonic timestamped live playlists always contain:
-    '   1. #EXT-X-PROGRAM-DATE-TIME tag
-    '   2. Relative .ts segment paths in YYYY/MM/DD/HH/MM/SS-NNNNN.ts format
-    ' When detected, redirect to video.m3u8 so Roku polls it natively
-    ' rather than us caching a snapshot of expiring segment URLs.
+    ' Flussonic timestamped live playlists (PROGRAM-DATE-TIME + .ts segments):
+    ' redirect to video.m3u8 so Roku polls it natively instead of us caching
+    ' a snapshot of expiring segment URLs.
     if body.InStr("EXT-X-PROGRAM-DATE-TIME") >= 0 and body.InStr(".ts") >= 0 then
         videoUrl = _buildFlussonicVideoUrl(url)
         print ">>> PATCHER: Flussonic detection: input="; url; " videoUrl="; videoUrl
@@ -98,10 +80,8 @@ sub patchManifest()
         return
     end if
 
-    ' ---------- Flussonic variant with tracks-vXaX/mono.m3u8 entries ----------
-    ' These masters nest: index.m3u8 → tracks-v1a1/mono.m3u8 (the actual media playlist).
-    ' Fetch mono.m3u8 directly with the Referer, patch its segment URLs to absolute,
-    ' then serve a synthetic master wrapping it so Roku sees a valid bitrate entry.
+    ' Flussonic nested masters (index.m3u8 -> tracks-v1a1/mono.m3u8): fetch
+    ' mono.m3u8, patch its segment URLs, wrap in a synthetic master.
     isNimble = hasVariants and (body.InStr("tracks-v") >= 0 or body.InStr("mono.m3u") >= 0)
     if isNimble then
         baseUrl = _getBaseUrl(url)
@@ -164,30 +144,24 @@ sub patchManifest()
     end if  ' end if isNimble
 
     if hasVariants then
-        ' ---- Session-token detection ----
-        ' Some servers (e.g. nive.live) embed a short-lived ?session=UUID in every
-        ' variant and audio stream URL inside the master manifest. If we patch these
-        ' into tmp:/patched.m3u8, the token expires before Roku plays the file and
-        ' every request returns 401. The fix: detect the pattern and hand the
-        ' original manifest URL back to Roku so it fetches a live copy itself,
-        ' getting a fresh token on every manifest refresh.
+        ' Some servers embed a short-lived ?session=UUID in variant/audio URLs --
+        ' patching those into a tmp: file lets the token expire before Roku plays
+        ' it. Detected here, we hand the original URL back so Roku fetches fresh.
         sessionReg = CreateObject("roRegex", "[?&]session=[a-f0-9\-]{36}", "i")
         if sessionReg.isMatch(body) then
             print ">>> PATCHER: Session-token master detected"
             print ">>> PATCHER: Master URL: "; url
             print ">>> PATCHER: UserAgent: "; userAgent
             print ">>> PATCHER: Referrer: "; referer
-            ' Signal ManifestCallbacks to start LocalProxy (roStreamSocket HTTP server).
-            ' The proxy serves http://localIP:7171/master -- a real http:// URL that Roku
-            ' can fetch segments from natively with no tmp: sandbox restriction.
+            ' Tells ManifestCallbacks to start LocalProxy -- serves a real http://
+            ' URL Roku can fetch natively, no tmp: sandbox restriction.
             print ">>> PATCHER: Signalling useProxy=true to MainScene"
             m.top.result = { url: url, patched: true, error: "", isNimble: false, useProxy: true }
             return
         end if
 
-        ' ---- Level 1: variant/master playlist ----
-        ' Check if this is a high-version HLS stream that the tmp: sandbox will block.
-        ' If so, signal useProxy so LocalProxy serves it over http:// instead.
+        ' High-version HLS over https:// -- the tmp: sandbox will block it, so
+        ' signal useProxy to serve it via LocalProxy instead.
         hlsVersionReg = CreateObject("roRegex", "#EXT-X-VERSION:(\d+)", "i")
         hlsVersionM   = hlsVersionReg.Match(body)
         hlsVersion    = 0
@@ -205,10 +179,8 @@ sub patchManifest()
             m.top.result = { url: url, patched: false, error: "", isNimble: isNimble }
         end if
     else
-        ' ---- Flat media playlist: patch segment URLs and serve directly ----
-        ' Fetch a fresh copy of the manifest immediately before patching
-        ' to minimize the window between segment URL generation and Roku fetching them.
-        ' Live Flussonic segments expire quickly — stale URLs cause "unexpected problem".
+        ' Flat media playlist: fetch fresh (live Flussonic segments expire
+        ' quickly) and patch segment URLs directly.
         freshBody = _fetch(url, userAgent, referer)
         if freshBody <> invalid and freshBody <> "" and Left(LCase(freshBody), 7) = "#extm3u" then
             print ">>> PATCHER: Refreshed flat manifest before patching"

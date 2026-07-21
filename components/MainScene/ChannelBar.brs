@@ -29,10 +29,16 @@
 
 ' ---------- Show / hide ----------
 
-' Shows the bar for the given channel and (re)starts the 3s auto-hide timer.
-' Safe to call repeatedly — e.g. on every channel surf — it just refreshes.
-sub showChannelBar(channel as Object)
+' Shows the bar for whatever's cached in m.playingChannel and (re)starts the
+' 3s auto-hide timer. Safe to call repeatedly — e.g. on every channel surf —
+' it just refreshes. No longer takes a channel param: every caller used to
+' derive one from m.flatChannelList[m.currentChannelIndex] independently,
+' which is exactly the field that can drift from what's actually playing
+' (see m.playingChannel's comment in MainScene.brs). Reading the cache here
+' instead means every caller shows the same, correct channel.
+sub showChannelBar()
     if m.channelBar = invalid then return
+    channel = m.playingChannel
     if channel = invalid then return
 
     ' Bar and quick channel menu are mutually exclusive
@@ -62,11 +68,7 @@ sub toggleChannelBar()
     if m.barVisible then
         hideChannelBar()
     else
-        channel = invalid
-        if m.flatChannelList <> invalid and m.currentChannelIndex >= 0 and m.currentChannelIndex < m.flatChannelList.Count() then
-            channel = m.flatChannelList[m.currentChannelIndex]
-        end if
-        if channel <> invalid then showChannelBar(channel)
+        if m.playingChannel <> invalid then showChannelBar()
     end if
 end sub
 
@@ -139,8 +141,7 @@ end sub
 ' Favorite button. Always acts on whatever channel is currently playing.
 
 sub toggleFavoriteForCurrentChannel()
-    if m.flatChannelList = invalid or m.currentChannelIndex < 0 or m.currentChannelIndex >= m.flatChannelList.Count() then return
-    channel = m.flatChannelList[m.currentChannelIndex]
+    channel = m.playingChannel
     if channel = invalid then return
     toggleFavorite(channel)
     _syncFavoriteButtonLabel(channel)
@@ -223,9 +224,22 @@ end sub
 sub _updateChannelBarLogo(channel as Object)
     if m.channelBarLogo = invalid then return
     m.channelBarLogoChannel  = channel
+    m.channelBarLogoRetried  = false
+
+    if channel <> invalid and channel.url <> invalid and channel.url = m.iconResolvedUrl and m.iconResolvedUri <> "" then
+        ' previewChannelLogo already resolved this exact channel's icon --
+        ' they're never on screen together, so just copy the result across
+        ' rather than fetching the identical remote image a second time.
+        m.channelBarLogoRequestedUri = m.iconResolvedUri
+        m.channelBarLogo.uri        = m.iconResolvedUri
+        m.channelBarLogo.visible    = true
+        return
+    end if
+
     m.channelBarLogo.uri     = ""
     m.channelBarLogo.visible = false
     iconUrl = _bestIconUrl(channel)
+    m.channelBarLogoRequestedUri = iconUrl
     if iconUrl <> "" then
         m.channelBarLogo.uri     = iconUrl
         m.channelBarLogo.visible = true

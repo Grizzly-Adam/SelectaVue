@@ -73,12 +73,9 @@ sub getContent()
 	pendingTvgId     = ""
 	pendingLogo      = ""
 
-	' Collected during parsing; each entry is {url, title, description,
-	' group} — group is "" for ungrouped channels, or one of possibly
-	' several group names for a channel tagged under multiple categories
-	' (each membership becomes its own entry, sharing the same url/title).
-	' Sorted and assembled into the final tree by the shared
-	' buildSortedChannelTree() (see components/Shared/PlaylistSort.brs).
+	' Each entry: {url, title, description, group}. A channel tagged under
+	' multiple categories gets one entry per group. Sorted/assembled by
+	' buildSortedChannelTree() (components/Shared/PlaylistSort.brs).
 	allItems = []
 
 	for each line in reLineSplit.Split(text)

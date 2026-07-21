@@ -135,10 +135,9 @@ sub playPreviewChannel(channelIndex as Integer)
     if m.previewVideo = invalid then return
     if m.flatChannelList = invalid or m.flatChannelList.Count() = 0 then return
 
-    channel = getChannelByFocusIndex(channelIndex)
-    if channel = invalid and channelIndex >= 0 and channelIndex < m.flatChannelList.Count() then
-        channel = m.flatChannelList[channelIndex]
-    end if
+    channel = invalid
+    if channelIndex >= 0 and channelIndex < m.flatChannelList.Count() then channel = m.flatChannelList[channelIndex]
+    if channel = invalid then channel = getChannelByFocusIndex(channelIndex)   ' fallback -- shouldn't normally be needed
     if channel = invalid or channel.url = invalid then return
 
     ' Same pin-removal as playChannel() (see comment there). Safe here too --
@@ -244,7 +243,7 @@ sub playChannel(content as Object)
     hideChannelBar()
 
     ' If a "now playing" pin is sitting at the tail of the grid (see
-    ' _resyncOrPinChannelAfterPlaylistSwitch() in Utils.brs) and this is a
+    ' _resyncOrPinCurrentChannel() in Utils.brs) and this is a
     ' genuinely different channel, remove it now -- it's gone the moment we
     ' tune away from it. This runs before the resync block below so that
     ' block re-derives m.currentChannelIndex against the already-updated
@@ -283,6 +282,11 @@ sub playChannel(content as Object)
         channel = m.flatChannelList[m.currentChannelIndex]
     end if
 
+    ' This is the one place m.playingChannel gets set -- see the field's
+    ' comment in MainScene.brs's init block for why it exists separately
+    ' from m.currentChannelIndex.
+    m.playingChannel = channel
+
     ' Keep the grid's preview name/logo in sync with whatever is actually
     ' playing, since playChannel() is the entry point for fullscreen launch
     ' (app boot) and channel changes while fullscreen — not just grid preview.
@@ -295,6 +299,7 @@ sub playChannel(content as Object)
         hideBufferBar()
         cancelStallTimer()
         startChannelLoadBufferTimer()
+        m.channelLoadTimer = CreateObject("roTimespan")
         print ">>> PLAY: "; content.title
 
         m.loadingChannelIndex = m.currentChannelIndex
@@ -361,7 +366,7 @@ sub playChannel(content as Object)
     hideOverlay()
     m.isPlayingVideo = true
 
-    if channel <> invalid then showChannelBar(channel)
+    if channel <> invalid then showChannelBar()
 
     m.previewVideo.setFocus(false)
     m.channelList.setFocus(false)
@@ -401,9 +406,21 @@ sub _updatePreviewLogo(channel as Object)
     ' Store the channel this logo belongs to so the loadStatus fallback
     ' uses the right category even if the user surfs away before it loads.
     m.previewChannelLogoChannel = channel
+    m.previewChannelLogoRetried = false
+
+    if channel <> invalid and channel.url <> invalid and channel.url = m.iconResolvedUrl and m.iconResolvedUri <> "" then
+        ' channelBarLogo already resolved this exact channel's icon -- reuse
+        ' it directly, same reasoning as _updateChannelBarLogo() above.
+        m.previewChannelLogoRequestedUri = m.iconResolvedUri
+        m.previewChannelLogo.uri        = m.iconResolvedUri
+        m.previewChannelLogo.visible    = true
+        return
+    end if
+
     m.previewChannelLogo.uri     = ""
     m.previewChannelLogo.visible = false
     iconUrl = _bestIconUrl(channel)
+    m.previewChannelLogoRequestedUri = iconUrl
     if iconUrl <> "" then
         m.previewChannelLogo.uri     = iconUrl
         m.previewChannelLogo.visible = true

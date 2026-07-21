@@ -17,14 +17,32 @@ sub loadSavedPlaylists()
     reg = CreateObject("roRegistrySection", PLAYLISTS_REG_SECTION())
     m.playlists = []
 
-    ' Built-in playlists — isDefault = true, never written to registry.
-    ' BUILTIN_PLAYLIST_COUNT() in Utils.brs counts these automatically via
-    ' isDefault, so no separate constant to keep in sync when editing this list.
-    m.playlists.Push({ name: "Southdale Labs", url: "https://grizz.atwebpages.com/grizz.m3u",           isDefault: true })
-    m.playlists.Push({ name: "United States",  url: "https://iptv-org.github.io/iptv/countries/us.m3u", isDefault: true })
-    m.playlists.Push({ name: "Canada",         url: "https://iptv-org.github.io/iptv/countries/ca.m3u", isDefault: true })
-    m.playlists.Push({ name: "United Kingdom", url: "https://iptv-org.github.io/iptv/countries/uk.m3u", isDefault: true })
-    m.playlists.Push({ name: "Australia",      url: "https://iptv-org.github.io/iptv/countries/au.m3u", isDefault: true })
+    ' Built-in playlists — fully editable/deletable per-device via their own
+    ' registry namespace (builtin_name_N / builtin_url_N override the
+    ' hardcoded default for slot N, builtin_deleted_N tombstones it). This is
+    ' intentionally a SEPARATE namespace from the name_i/url_i/count scheme
+    ' below (which belongs to custom playlists only) so editing/deleting a
+    ' built-in here can never collide with or renumber a custom playlist's
+    ' registry keys. builtinSlot records each entry's ORIGINAL index (0-4)
+    ' so edits/deletes still target the right key after an earlier built-in
+    ' has been deleted and everything after it has shifted position in
+    ' m.playlists — see onEditNameComplete/onEditUrlComplete/onDeleteConfirmed.
+    defaults = [
+        { name: "Southdale Labs", url: "https://grizz.atwebpages.com/grizz.m3u" },
+        { name: "United States",  url: "https://iptv-org.github.io/iptv/countries/us.m3u" },
+        { name: "Canada",         url: "https://iptv-org.github.io/iptv/countries/ca.m3u" },
+        { name: "United Kingdom", url: "https://iptv-org.github.io/iptv/countries/uk.m3u" },
+        { name: "Australia",      url: "https://iptv-org.github.io/iptv/countries/au.m3u" }
+    ]
+    for slot = 0 to defaults.Count() - 1
+        if reg.Read("builtin_deleted_" + slot.ToStr()) <> "true" then
+            name = defaults[slot].name
+            url  = defaults[slot].url
+            if reg.Exists("builtin_name_" + slot.ToStr()) then name = reg.Read("builtin_name_" + slot.ToStr())
+            if reg.Exists("builtin_url_"  + slot.ToStr()) then url  = reg.Read("builtin_url_"  + slot.ToStr())
+            m.playlists.Push({ name: name, url: url, isDefault: true, builtinSlot: slot })
+        end if
+    end for
 
     ' User-added playlists from registry
     if reg.Exists("count") then
@@ -77,7 +95,7 @@ end sub
 ' onOverlayItemFocused; without this, the shader could only be dismissed
 ' from the playlist panel via OK/back/left/right/replay/options, not up/down.
 sub onPlaylistFocused()
-    if m.loadingDialogVisible then _dismissLoadingDialogForInput()
+    if m.loadingDialogVisible then return
     cancelAnyInFlightRetry()
     _dismissScreensaverIfVisible()
 end sub
@@ -85,8 +103,7 @@ end sub
 sub onPlaylistSelected()
     print ">>> LOADDLG: onPlaylistSelected called, loadingDialogVisible="; m.loadingDialogVisible; " isPlayingVideo="; m.isPlayingVideo
     if m.loadingDialogVisible then
-        print ">>> LOADDLG: onPlaylistSelected -- dialog already visible, dismissing for input and returning without loading"
-        _dismissLoadingDialogForInput()
+        print ">>> LOADDLG: onPlaylistSelected -- dialog visible, blocking selection"
         return
     end if
     if _dismissScreensaverIfVisible() then return
@@ -113,9 +130,8 @@ sub onPlaylistSelected()
         end if
         m.currentPlaylist   = playlistIdx
         m.pendingChannelUrl = invalid
-        _captureChannelBeforePlaylistSwitch()
+        _captureCurrentlyPlayingChannel()
         print ">>> LOADDLG: onPlaylistSelected -- about to call loadPlaylist for playlistIdx="; playlistIdx
         loadPlaylist(m.playlists[playlistIdx].url)
-        saveLastState()
     end if
 end sub

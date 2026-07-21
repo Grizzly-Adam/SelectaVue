@@ -1,7 +1,7 @@
 title=SelectaVue
 major_version=1
-minor_version=5
-build_version=250
+minor_version=6
+build_version=1
 
 # SceneGraph version - required for Roku OS 9.0+ performance and memory optimizations
 rsg_version=1.3

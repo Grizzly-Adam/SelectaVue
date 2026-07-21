@@ -9,7 +9,7 @@ SelectaVue manages and plays M3U playlists with a clean, fast interface built fo
 - **Preview** — A small window in the top right corner of the channel grid allows you to preview channels before launching in full screen
 - **Channelbar** - A channelbar with playlist name, channel name, and option buttons is available in full-screen mode
 - **Quick menu** — Press ← while watching to browse all channels without pausing video
-- **Favorites** - Easily add channels as favorites by pressing * on channel list or selecting the "⭐" button from channelbar button
+- **Favorites** - Easily add channels as favorites by pressing * on channel list or selecting the "⭐" button from channelbar
 - **Closed captioning** — Turn closed captioning on/off (when available) from the channelbar "CC" button, or using Roku's built in * menu
 - **Reload/Jump to live** — Press → or select the LIVE button from the channelbar to reload the stream, or jump to live if stream was paused
 - **Channel information** - Display channel stream details by selecting the "ℹ️" button from the channelbar
@@ -22,6 +22,7 @@ SelectaVue manages and plays M3U playlists with a clean, fast interface built fo
 - **Manifest patching** — Automatically fixes common HLS manifest problems (missing bitrate info, flat manifests, LL-HLS markers) that cause streams to fail on Roku but work in VLC
 - **Per-stream headers** — Reads `#EXTVLCOPT` User-Agent and Referrer overrides from M3U playlists so streams that require specific headers play correctly
 - **Error reporting** — Friendly error messages with channel name and description of the problem
+- **Phone/QR text entry** — Scan a QR code to input playlist names and URLs from your phone instead of the remote
 
 ## 📥 Installation
 
@@ -31,12 +32,12 @@ Visit https://developer.roku.com/dev/docs/developer-setup for sideloading instru
 
 ### Playlist list
 
-| Button             | Action                                              |
-| ------------------ | --------------------------------------------------- |
-| **↑↓**             | Browse playlists                                    |
-| **→**              | Switch to channel grid                              |
-| **OK**             | Select playlist                                     |
-| **✱**              | Playlist menu - Show hidden channels, edit playlist |
+| Button             | Action                                                     |
+| ------------------ | ---------------------------------------------------------- |
+| **↑↓**             | Browse playlists                                           |
+| **→**              | Switch to channel grid                                     |
+| **OK**             | Select playlist                                            |
+| **✱**              | Playlist menu (Show hidden channels, edit/delete playlist) |
 
 ### Channel grid
 
@@ -84,13 +85,15 @@ Visit https://developer.roku.com/dev/docs/developer-setup for sideloading instru
 
 ### Channelbar (press OK while in fullscreen)
 
-| **←**                 | Close the channelbar and opens the quick menu      |
+| Button                | Action                                             |
+| --------------------- | -------------------------------------------------- |
+| **←→**                | Select channelbar buttons                          |
 | **Back**              | Close the channelbar                               |
 | ⭐ **Favorites**      | Add/remove channel from favorites list             |
-| **Closed captioning** | — Turn CC on or off                                |
+| **Closed captioning** | Toggles closed captioning on and off               |
 | ℹ️ **Channel info**   | Display information about the current channel      |
 | 🎬 **Live**           | Reload/jump to live video                          |
-| 👁 **Show/hide**      |Shows/hides the current playing channel             |
+| 👁 **Show/hide**       | Shows/hides the current playing channel            |
 
 
 ## 📺 Playlists
@@ -110,14 +113,14 @@ Use your own M3U playlist or your IPTV provider's URL, see **Playlist resources*
 - 🇬🇧 United Kingdom
 
 ### Add a custom playlist
-1. Select **➕ Add List** in the playlist menu
-2. Enter a name for your list
-3. Enter the URL of your M3U playlist (must start with http:// or https://)
+1. Select **➕ Add List** in the playlist list
+2. Enter a name for your playlist — either with the on-screen keyboard, or by scanning the QR code with your phone
+3. Enter the URL of your M3U playlist the same way
 4. Your list will appear in the menu immediately
 
 **Playlist resources:**
 - [IPTV-ORG](https://github.com/iptv-org/iptv) — Global collection
-- [IPTV-ORG](https://iptv-org.github.io/iptv/countries/us.m3u) — Australia playlist
+- [IPTV-ORG](https://iptv-org.github.io/iptv/countries/au.m3u) — Australia playlist
 - [IPTV-ORG](https://iptv-org.github.io/iptv/countries/ca.m3u) — Canada playlist
 - [IPTV-ORG](https://iptv-org.github.io/iptv/countries/uk.m3u) — United Kingdom playlist
 - [IPTV-ORG](https://iptv-org.github.io/iptv/countries/us.m3u) — United States playlist
@@ -154,8 +157,8 @@ telnet YOUR_ROKU_IP 8085
 
 ## 📋 Version
 
-- **Current version:** 1.5.250
-- **Last updated:** July 16, 2026
+- **Current version:** 1.6.1
+- **Last updated:** July 21, 2026
 
 
 ## 📄 Legal

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component name="PhoneEntryServer" extends="Task">
+    <interface>
+        <!-- Set before starting: pre-fills the phone page's text box with
+             whatever's already been typed on the TV keyboard, so switching
+             back and forth between remote and phone doesn't lose progress. -->
+        <field id="initialText" type="string" value=""/>
+        <!-- Mirror whatever's currently showing on the TV -- read fresh on every
+             request, so a step transition (e.g. name entry -> URL entry) that
+             happens while the phone page is open takes effect on the phone's
+             next request without restarting the server. -->
+        <field id="pageTitle"        type="string" value=""/>
+        <field id="pageInstructions" type="string" value=""/>
+        <field id="sendLabel"        type="string" value="Send"/>
+        <!-- When errorTitle is non-empty, GET / shows an error view (title +
+             message + OK button, and a Back button if errorShowBack) instead
+             of the normal text-entry form. errorAction reports back which
+             button the phone pressed ("ok" or "back") -- observe this from
+             the TV side, and clear errorTitle once handled so the phone's
+             next request shows the normal form again. -->
+        <field id="errorTitle"     type="string"  value=""/>
+        <field id="errorMessage"   type="string"  value=""/>
+        <field id="errorShowBack"  type="boolean" value="false"/>
+        <field id="errorAction"    type="string"  value="" alwaysNotify="true"/>
+        <!-- Set (non-empty) right before the TV finally closes for good --
+             shows a friendly "All set!" landing page (with a button to jump
+             back to the Roku app via ECP) instead of the phone hitting a
+             dead server or a stale form on its next request. -->
+        <field id="doneMessage"   type="string"  value=""/>
+        <!-- Set stopServer=true to signal the running thread to exit -->
+        <field id="stopServer"  type="boolean" value="false"/>
+        <!-- Reports back "ready:http://ip:port/" once listening, or "error: ..." -->
+        <field id="status"      type="string" value="idle"/>
+        <!-- Updated every time the phone submits the form -- observe this -->
+        <field id="submittedText" type="string" value=""/>
+    </interface>
+    <script type="text/brightscript" uri="pkg:/components/PhoneEntryServer/PhoneEntryServer.brs"/>
+</component>

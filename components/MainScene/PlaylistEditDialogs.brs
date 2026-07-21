@@ -1,7 +1,9 @@
 ' ==================== PlaylistEditDialogs.brs ====================
 ' Per-playlist options dialog (Edit Name / Edit URL / Delete) and the
-' three follow-up dialog flows it triggers. Built-in playlists show a
-' read-only notice instead of the options dialog.
+' three follow-up dialog flows it triggers. Built-in playlists get the same
+' dialog as custom ones -- see loadSavedPlaylists() in PlaylistManager.brs
+' for how their edits/deletes persist per-device without ever touching the
+' hardcoded defaults or affecting other installs.
 
 ' ---------- Per-playlist options dialog ----------
 
@@ -21,20 +23,11 @@ sub showPlaylistOptions()
     isCurrentlyLoaded = (selectedIdx = m.currentPlaylist)
     viewToggleLabel   = iif(m.hiddenOnly, "Show All Channels", "Show Hidden Channels")
 
-    if selectedPlaylist.isDefault = true then
-        if isCurrentlyLoaded then
-            _showSimpleDialog(selectedPlaylist.name, "Built-in playlists cannot be edited or removed.", [viewToggleLabel, "OK"], "onDefaultPlaylistDialogClosed")
-        else
-            _showSimpleDialog(selectedPlaylist.name, "Built-in playlists cannot be edited or removed.", ["OK"], "onDefaultPlaylistDialogClosed")
-        end if
-        return
-    end if
-
-    if isCurrentlyLoaded then
-        _showSimpleDialog("Options: " + selectedPlaylist.name, "", ["Edit Name", "Edit URL", "Delete", viewToggleLabel, "Cancel"], "onPlaylistOptionSelected")
-    else
-        _showSimpleDialog("Options: " + selectedPlaylist.name, "", ["Edit Name", "Edit URL", "Delete", "Cancel"], "onPlaylistOptionSelected")
-    end if
+    buttons = ["Edit Name", "Edit URL", "Delete"]
+    if isCurrentlyLoaded then buttons.Push(viewToggleLabel)
+    buttons.Push("Cancel")
+    _showThemedMenuDialog("Options: " + selectedPlaylist.name, buttons, "onPlaylistOptionSelected")
+    resetOptionsDialogTimer()
 end sub
 
 ' Shared by both dialog variants above -- toggles between the Hidden
@@ -51,21 +44,11 @@ sub _toggleHiddenChannelsViewFromPlaylistMenu()
     end if
 end sub
 
-sub onDefaultPlaylistDialogClosed()
-    buttonIdx   = m.top.dialog.buttonSelected
-    buttonCount = m.top.dialog.buttons.Count()
-    _closeDialog()
-    if buttonCount = 2 and buttonIdx = 0 then
-        _toggleHiddenChannelsViewFromPlaylistMenu()
-    else
-        _returnToPlaylistPanel()
-    end if
-end sub
-
 sub onPlaylistOptionSelected()
-    buttonIdx       = m.top.dialog.buttonSelected
-    hasHiddenToggle = (m.top.dialog.buttons.Count() = 5)
-    _closeDialog()
+    buttonIdx = m.themedMenuDialog.buttonSelected
+    if buttonIdx = -1 then return   ' -1 is the reset default, never a real press
+    hasHiddenToggle = (m.themedMenuDialog.buttons.Count() = 5)
+    _closeThemedMenuDialog()
     if buttonIdx = 0 then
         _delayedCall("editPlaylistName", 0.2)
     else if buttonIdx = 1 then
@@ -85,29 +68,38 @@ sub editPlaylistName()
     _clearOptionTimer()
     if m.selectedPlaylistIndex = invalid then return
     playlist = m.playlists[m.selectedPlaylistIndex]
-    _showKeyboardDialog("EDIT NAME", "Enter new name for playlist", playlist.name, ["Save", "Cancel"], "onEditNameComplete")
+    _showPhoneKeyboardDialog("EDIT NAME", "Enter new name for playlist", playlist.name, "Save", "onEditNameComplete", true)
 end sub
 
 sub onEditNameComplete()
-    buttonSelected = m.top.dialog.buttonSelected
+    buttonSelected = m.phoneKeyboardDialog.buttonSelected
+    if buttonSelected = -1 then return
     if buttonSelected = 0 then
-        newName = m.top.dialog.text
-        _closeDialog()
-        if newName <> "" and newName <> invalid then
-            playlist = m.playlists[m.selectedPlaylistIndex]
-            playlist.name = newName
-            reg      = CreateObject("roRegistrySection", PLAYLISTS_REG_SECTION())
+        newName = m.phoneKeyboardDialog.text
+        if newName = "" or newName = invalid then
+            _showKeyboardErrorDialog("Name Required", "Playlist name cannot be empty", false, "onSimpleErrorPhoneAction")
+            return
+        end if
+        _closePhoneKeyboardDialog()
+        playlist = m.playlists[m.selectedPlaylistIndex]
+        playlist.name = newName
+        reg = CreateObject("roRegistrySection", PLAYLISTS_REG_SECTION())
+        if playlist.isDefault = true then
+            reg.Write("builtin_name_" + playlist.builtinSlot.ToStr(), newName)
+            reg.Flush()
+        else
             regIndex = m.selectedPlaylistIndex - BUILTIN_PLAYLIST_COUNT()
             if regIndex >= 0 then
                 reg.Write("name_" + regIndex.ToStr(), newName)
                 reg.Flush()
             end if
-            setupPlaylistMenu()
         end if
+        setupPlaylistMenu()
+        _returnToPlaylistPanel()
     else
-        _closeDialog()
+        _closePhoneKeyboardDialog()
+        _returnToPlaylistPanel()
     end if
-    _returnToPlaylistPanel()
 end sub
 
 ' ---------- Edit URL ----------
@@ -116,30 +108,40 @@ sub editPlaylistUrl()
     _clearOptionTimer()
     if m.selectedPlaylistIndex = invalid then return
     playlist = m.playlists[m.selectedPlaylistIndex]
-    _showKeyboardDialog("EDIT URL", "New URL for the M3U playlist", playlist.url, ["Save", "Cancel"], "onEditUrlComplete")
+    _showPhoneKeyboardDialog("EDIT URL", "New URL for the M3U playlist", playlist.url, "Save", "onEditUrlComplete")
 end sub
 
 sub onEditUrlComplete()
-    buttonSelected = m.top.dialog.buttonSelected
+    buttonSelected = m.phoneKeyboardDialog.buttonSelected
+    if buttonSelected = -1 then return
     if buttonSelected = 0 then
-        newUrl = m.top.dialog.text
-        _closeDialog()
-        if isValidUrl(newUrl) then
-            playlist = m.playlists[m.selectedPlaylistIndex]
-            playlist.url = newUrl
-            reg      = CreateObject("roRegistrySection", PLAYLISTS_REG_SECTION())
+        newUrl = m.phoneKeyboardDialog.text
+        if newUrl = "" or newUrl = invalid then
+            _showKeyboardErrorDialog("URL Required", "Playlist URL cannot be empty", false, "onSimpleErrorPhoneAction")
+            return
+        end if
+        if Left(LCase(newUrl), 7) <> "http://" and Left(LCase(newUrl), 8) <> "https://" then
+            newUrl = "http://" + newUrl
+        end if
+        _closePhoneKeyboardDialog()
+        playlist = m.playlists[m.selectedPlaylistIndex]
+        playlist.url = newUrl
+        reg = CreateObject("roRegistrySection", PLAYLISTS_REG_SECTION())
+        if playlist.isDefault = true then
+            reg.Write("builtin_url_" + playlist.builtinSlot.ToStr(), newUrl)
+            reg.Flush()
+        else
             regIndex = m.selectedPlaylistIndex - BUILTIN_PLAYLIST_COUNT()
             if regIndex >= 0 then
                 reg.Write("url_" + regIndex.ToStr(), newUrl)
                 reg.Flush()
             end if
-            m.currentPlaylist = m.selectedPlaylistIndex
-            loadPlaylist(newUrl)
-        else
-            _showPlaylistError("URL invalid. Must start with http:// or https://")
         end if
+        m.currentPlaylist = m.selectedPlaylistIndex
+        _captureCurrentlyPlayingChannel()   ' see the matching fix/comment in onPlaylistUrlEntered() (PlaylistAddDialog.brs)
+        loadPlaylist(newUrl)
     else
-        _closeDialog()
+        _closePhoneKeyboardDialog()
         _returnToPlaylistPanel()
     end if
 end sub
@@ -150,15 +152,24 @@ sub confirmDeletePlaylist()
     _clearOptionTimer()
     if m.selectedPlaylistIndex = invalid then return
     playlist = m.playlists[m.selectedPlaylistIndex]
-    _showSimpleDialog("Are you sure?", "Delete '" + playlist.name + "'?", ["Delete", "Cancel"], "onDeleteConfirmed")
+    _showThemedMessageDialog("Are you sure?", "Delete '" + playlist.name + "'?", ["Delete", "Cancel"], "onDeleteConfirmed", 700, 360)
 end sub
 
 sub onDeleteConfirmed()
-    buttonSelected = m.top.dialog.buttonSelected
-    _closeDialog()
+    buttonSelected = m.themedMessageDialog.buttonSelected
+    if buttonSelected = -1 then return   ' -1 is the reset default, never a real press
+    _closeThemedMessageDialog()
     if buttonSelected = 0 then
+        deletedPlaylist = m.playlists[m.selectedPlaylistIndex]
         m.playlists.Delete(m.selectedPlaylistIndex)
-        reg      = CreateObject("roRegistrySection", PLAYLISTS_REG_SECTION())
+        reg = CreateObject("roRegistrySection", PLAYLISTS_REG_SECTION())
+        if deletedPlaylist.isDefault = true then
+            ' Tombstone this slot so loadSavedPlaylists() skips it on future
+            ' loads -- separate namespace from the custom-playlist rewrite
+            ' below, so it can't disturb any custom playlist's registry keys.
+            reg.Write("builtin_deleted_" + deletedPlaylist.builtinSlot.ToStr(), "true")
+            reg.Flush()
+        end if
         newIndex = 0
         for i = BUILTIN_PLAYLIST_COUNT() to m.playlists.Count() - 1
             pl = m.playlists[i]
@@ -177,6 +188,7 @@ sub onDeleteConfirmed()
         ' m.currentPlaylist in sync with whatever we actually load below.
         if m.playlists.Count() > 0 then
             m.currentPlaylist = 0
+            _captureCurrentlyPlayingChannel()   ' see the matching fix/comment in onPlaylistUrlEntered() (PlaylistAddDialog.brs)
             loadPlaylist(m.playlists[0].url)
         else
             m.currentPlaylist = 0

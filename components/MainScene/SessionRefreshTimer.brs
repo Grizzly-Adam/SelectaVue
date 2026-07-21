@@ -15,8 +15,7 @@ sub onSessionRefreshFired()
     m.sessionRefreshTimer = invalid
     if not m.sessionTokenStream then return
     state = m.previewVideo.state
-    ' For direct MP4 clips: allow swap on playing, buffering, or finished
-    ' For HLS live: only swap while playing (buffering reset is unrecoverable)
+    ' Only swap while actively playing -- buffering reset is unrecoverable
     allowSwap = (state = "playing")
     if not allowSwap then
         print ">>> SESSION REFRESH: Deferring swap (state="; state; ") -- restarting timer"

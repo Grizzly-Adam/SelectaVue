@@ -26,6 +26,15 @@ sub buildFlatChannelList()
     print ">>> PLAYLIST: Total channels in flat list: "; m.flatChannelList.Count()
 end sub
 
+' Walks the ContentNode tree structurally to find what's at a given flat
+' position -- O(n) from the front every call. m.flatChannelList is the same
+' data kept in sync with this same tree by every rebuild path, so anything
+' called per-keystroke (grid focus, most selections) should index into that
+' array directly instead of calling this. Now only used as a fallback in
+' playPreviewChannel() and by selectChannelFromList() (for the quick menu,
+' where reading the list's own displayed content directly is the more
+' correct source of truth than m.flatChannelList if the two were ever to
+' drift — see the note on _showQuickMenu() in FullscreenInput.brs).
 function getChannelByFocusIndex(focusIndex as Integer) as Object
     return getChannelFromListItem(m.channelList, focusIndex)
 end function
@@ -45,14 +54,28 @@ function getChannelFromFlatListItem(content as Object, itemIndex as Integer) as 
         section = content.getChild(i)
         if section = invalid then continue for
         if section.getChildCount() = 0 then
-            if channelIndex = itemIndex then return section
-            channelIndex = channelIndex + 1
-        else
-            sectionCount = section.getChildCount()
-            if itemIndex < channelIndex + sectionCount then
-                return section.getChild(itemIndex - channelIndex)
+            ' Only counts as a flat position if it's a real leaf channel (has
+            ' a url) -- a bare/empty section header (no children, no url)
+            ' must be skipped entirely, same as buildFlatChannelList() above,
+            ' or the two fall out of sync by one position per such node.
+            if section.url <> invalid and section.url <> "" then
+                if channelIndex = itemIndex then return section
+                channelIndex = channelIndex + 1
             end if
-            channelIndex = channelIndex + sectionCount
+        else
+            ' Walk each child individually rather than trusting the raw
+            ' child count -- buildFlatChannelList() also skips any child
+            ' without a url, so a malformed entry inside a real category
+            ' would otherwise throw the two out of sync by one position
+            ' from that point on, same failure mode as the bare-section case
+            ' above just one level deeper.
+            for j = 0 to section.getChildCount() - 1
+                channel = section.getChild(j)
+                if channel <> invalid and channel.url <> invalid and channel.url <> "" then
+                    if channelIndex = itemIndex then return channel
+                    channelIndex = channelIndex + 1
+                end if
+            end for
         end if
     end for
     return invalid

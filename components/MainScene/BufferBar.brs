@@ -9,7 +9,9 @@ sub onBufferingStatus()
     if status = invalid then return
     pct = 0
     if status.percentage <> invalid then pct = status.percentage
-    print ">>> BUFFER: "; pct; "%"
+    underrun = "?"
+    if status.isUnderrun <> invalid then underrun = status.isUnderrun.ToStr()
+    print ">>> BUFFER: "; pct; "% (t="; _loadElapsedMs(); "ms, isUnderrun="; underrun; ")"
 
     if not m.bufferVisible and pct < 100 then
         if m.bufferDelayTimer = invalid then
@@ -19,7 +21,7 @@ sub onBufferingStatus()
 
     if m.bufferVisible then updateBufferBar(pct)
 
-    ' Hard stall detection — reset 15s timer when buffer moves
+    ' Hard stall detection — reset 20s timer when buffer moves
     if pct <> m.lastBufferPct and pct < 100 then
         m.lastBufferPct = pct
         _startNamedTimer("stallTimer", 20.0, false, "onBufferStall")
@@ -55,7 +57,7 @@ sub _softStepDown()
     bandwidths = [3000000, 2000000, 1500000, 1000000]
     bw = bandwidths[m.softStepCount]
     m.softStepCount = m.softStepCount + 1
-    print ">>> SOFT STEP-DOWN "; m.softStepCount; ": maxBandwidth = "; bw
+    print ">>> SOFT STEP-DOWN "; m.softStepCount; ": maxBandwidth = "; bw; " (t="; _loadElapsedMs(); "ms)"
     ' Store the cap — it will be applied on the next content node creation
     ' Do NOT reassign m.previewVideo.content to itself — that triggers
     ' SceneGraph observers and restarts the video node unexpectedly
@@ -64,6 +66,11 @@ end sub
 
 sub showBufferBar()
     _cancelNamedTimer("bufferDelayTimer")
+    ' Don't show (or re-show) the buffer bar while the retry dialog is up --
+    ' retries keep the video node buffering in the background the whole
+    ' time, which would otherwise pop the bar right back up a second later
+    ' via the delay timer below, on top of (or behind) the reconnect overlay.
+    if m.reconnectOverlay <> invalid and m.reconnectOverlay.visible then return
     ' Show whenever the channel isn't fully playing yet, rather than
     ' requiring the video node to already be in "buffering" state
     ' specifically — the 3s channel-load timer can fire before the video

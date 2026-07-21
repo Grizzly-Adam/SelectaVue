@@ -70,7 +70,11 @@ function _handleGridKey(key as String) as Boolean
             showPlaylistOptions()
             return true
         else
-            channel = getChannelByFocusIndex(m.channelList.itemFocused)
+            channel = invalid
+            focusedIdx = m.channelList.itemFocused
+            if m.flatChannelList <> invalid and focusedIdx >= 0 and focusedIdx < m.flatChannelList.Count() then
+                channel = m.flatChannelList[focusedIdx]
+            end if
             if channel <> invalid then
                 toggleFavorite(channel)
                 ' If currently viewing the favorites-only filter and this

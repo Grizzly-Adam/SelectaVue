@@ -75,6 +75,7 @@ end sub
 sub showRetryStatus(message as String)
     if m.reconnectOverlay = invalid then return
     hideChannelBar()
+    hideBufferBar()
     m.reconnectState = "ladder"
 
     ' Set channel name
@@ -102,6 +103,7 @@ end sub
 sub _showReconnectOverlay(isNetworkDown as Boolean)
     if m.reconnectOverlay = invalid then return
     hideChannelBar()
+    hideBufferBar()
     m.reconnectState = iif(isNetworkDown, "network", "outage")
 
     ' Set channel name
@@ -133,6 +135,7 @@ sub showGaveUpState(friendlyMsg as String)
     if m.reconnectOverlay = invalid then return
     m.reconnectState = "gaveup"
     hideChannelBar()
+    hideBufferBar()
 
     ' Set channel name
     idx = m.loadingChannelIndex

@@ -1,17 +1,14 @@
 ' ==================== LocalProxy.brs ====================
-' NOTE: Utility functions (_fetch, _makeAbsolute, _stripCR, _trim, iif, _join)
-' are intentionally duplicated here from ManifestPatcherHelpers.brs.
-' Task nodes run in isolated threads and cannot share code with other components.
-' Task node: local HTTP/1.0 server using roStreamSocket.
-' Serves patched HLS playlists to Roku's media player over http://localIP:7171/
-' This bypasses the tmp: sandbox entirely -- Roku's HLS engine makes real
-' network requests to our local server, gets v6 playlists with fresh session
-' tokens, and fetches segments directly from https://mci01.nive.live.
+' Task node: local HTTP/1.0 server (roStreamSocket) serving patched HLS
+' playlists over http://localIP:7171/ -- bypasses the tmp: sandbox since
+' Roku's HLS engine fetches from our local server instead.
+' Helpers (_fetch/_makeAbsolute/_stripCR/_trim/iif/_join) are duplicated
+' from ManifestPatcherHelpers.brs -- Task nodes can't share code.
 '
 ' Endpoints:
-'   /master  -> synthetic v6 master with EXT-X-MEDIA audio group
-'   /video   -> patched v6 video media playlist (fresh session tokens)
-'   /audio   -> patched v6 audio media playlist (fresh session tokens)
+'   /master -> synthetic v6 master with EXT-X-MEDIA audio group
+'   /video  -> patched v6 video media playlist (fresh session tokens)
+'   /audio  -> patched v6 audio media playlist (fresh session tokens)
 
 sub init()
     m.top.functionName = "runProxy"
@@ -32,9 +29,8 @@ sub runProxy()
         return
     end if
 
-    ' Perform cookieCheck=1 to get fresh hlsSession cookie for this Task's roUrlTransfer.
-    ' The Video node has its own cookie jar that doesn't share with Task threads.
-    ' We need our own fresh cookie for the proxy's segment-URL requests.
+    ' cookieCheck=1 gets a fresh hlsSession cookie for this Task's own
+    ' roUrlTransfer -- the Video node's cookie jar isn't shared with Tasks.
     cookieUrl = masterUrl
     if cookieUrl.InStr("cookieCheck") < 0 then
         if cookieUrl.InStr("?") >= 0 then
@@ -44,8 +40,7 @@ sub runProxy()
         end if
     end if
     print ">>> PROXY [task]: Performing cookieCheck: "; cookieUrl
-    ' Create a persistent roUrlTransfer with cookies primed via cookieCheck=1.
-    ' All proxy fetches reuse this same instance so the cookie jar persists.
+    ' Persistent roUrlTransfer -- all proxy fetches reuse it so cookies persist.
     m.http = CreateObject("roUrlTransfer")
     m.http.SetCertificatesFile("common:/certs/ca-bundle.crt")
     m.http.InitClientCertificates()
@@ -358,8 +353,7 @@ function _makeAbsolute(path as String, baseDir as String) as String
     if Left(lp, 7) = "http://" or Left(lp, 8) = "https://" then return path
     if Left(path, 2) = "//" then return "https:" + path
     if Left(path, 1) = "/" then
-        ' Extract origin (scheme+host) from baseDir using string parsing (no regex)
-        ' baseDir is always an absolute URL so find the third slash
+        ' Extract scheme+host from baseDir (always absolute) -- find the 3rd slash
         slashCount = 0
         i = 1
         while i <= Len(baseDir)

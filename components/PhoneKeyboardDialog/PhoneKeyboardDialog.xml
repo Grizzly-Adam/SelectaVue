@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Custom full-screen text-entry dialog, built to replace StandardKeyboardDialog
+-->
+<component name="PhoneKeyboardDialog" extends="Group">
+    <interface>
+        <field id="dialogTitle"    type="string"  value=""/>
+        <field id="instructions"   type="string"  value="" onChange="onInstructionsChanged"/>
+        <field id="saveLabel"      type="string"  value="Save"/>
+        <field id="text"           type="string"  value=""/>
+        <field id="autoCapFirst"   type="boolean" value="false"/>
+        <!-- true only for contexts with a previous step to return to (Add
+             Playlist's URL step) -- makes the physical remote Back button
+             behave like the on-screen BACK key (buttonSelected=2) instead
+             of Cancel (buttonSelected=1). Defaults false everywhere else. -->
+        <field id="backMeansStepBack" type="boolean" value="false"/>
+        <field id="buttonSelected" type="integer" value="-1" alwaysNotify="true"/>
+        <field id="show"           type="boolean" value="false" onChange="onShowChanged"/>
+        <!-- Set true when truly done with the flow (final save, or cancel
+             out entirely) to actually stop the phone-entry server. Closing
+             via `show=false` alone does NOT stop it -- see onStopPhoneEntryChanged
+             for why (Task threads don't restart from control="RUN" once
+             they've already returned, so it must stay alive across step
+             transitions within the same flow). -->
+        <field id="stopPhoneEntry" type="boolean" value="false" onChange="onStopPhoneEntryChanged"/>
+        <!-- Mirrors a validation error onto the phone page too (title +
+             message + OK, and Back if showBack) via callFunc. Observe
+             phoneErrorAction to find out which button the phone pressed. -->
+        <function name="showPhoneError"/>
+        <function name="clearPhoneError"/>
+        <field id="phoneErrorAction" type="string" value="" alwaysNotify="true"/>
+        <!-- Shows the phone's "All set!" landing page (with the Return-to-app
+             button) -- call right before actually stopping the server, so a
+             pending auto-refresh lands here instead of on a dead server. -->
+        <function name="showPhoneDone"/>
+    </interface>
+
+    <script type="text/brightscript" uri="pkg:/components/PhoneKeyboardDialog/PhoneKeyboardDialog.brs"/>
+    <script type="text/brightscript" uri="pkg:/components/PhoneKeyboardDialog/PhoneKeyboardKeys.brs"/>
+
+    <children>
+
+    <PhoneEntryServer id="pkdPhoneServer"/>
+
+    <Rectangle id="pkdShade" width="1920" height="1080" color="0x000000CC" visible="false"/>
+
+    <Rectangle id="pkdBorder" translation="[0, 0]" width="1920" height="1080" color="0x8fcdc1FF" visible="false">
+        <Rectangle id="pkdPanel" translation="[6, 6]" width="1908" height="1068" color="0x024c48FF">
+
+            <Poster id="pkdLogo"
+                translation="[594, 20]"
+                width="720"
+                height="180"
+                uri="pkg:/images/selectaview.png"/>
+
+            <Label id="pkdTitleLabel"
+                translation="[137, 262]"
+                width="1634"
+                font="font:LargeBoldSystemFont"
+                color="0x8fcdc1FF"/>
+
+            <Label id="pkdInstructionsLabel"
+                translation="[137, 316]"
+                width="1634"
+                height="60"
+                wrap="true"
+                font="font:MediumSystemFont"
+                color="0xE8F5F3FF"/>
+
+            <!-- Current text preview, narrowed to match the keyboard+gap+shortcuts width below -->
+            <Rectangle id="pkdTextBoxBorder" translation="[137, 391]" width="1634" height="64" color="0x8fcdc1FF">
+                <Rectangle id="pkdTextBox" translation="[4, 4]" width="1626" height="56" color="0x03302DFF" clippingRect="[0, 0, 1626, 56]">
+                    <Label id="pkdTextLabel"
+                        translation="[16, 0]"
+                        width="1594"
+                        height="56"
+                        vertAlign="center"
+                        font="font:MediumSystemFont"
+                        color="0xFFFFFFFF"/>
+                </Rectangle>
+            </Rectangle>
+
+            <!-- Right column: QR code + scan icon (same height, side by side), shortcuts block below.
+                 Half a key-width (48px) gap from the main keyboard; both blocks centered together
+                 as a single unit within the panel. -->
+            <QRCode id="pkdQrCode"
+                translation="[1406, 499]"
+                width="280"
+                height="280"
+                pixel="6"
+                border="2"
+                lightColor="0xFFFFFFFF"
+                darkColor="0x000000FF"/>
+
+            <!-- Dynamically populated with key Rectangles+Labels in .brs -->
+            <Group id="pkdKeyGrid" translation="[137, 499]"/>
+            <Group id="pkdShortcutGrid" translation="[1321, 795]"/>
+
+        </Rectangle>
+    </Rectangle>
+
+    </children>
+
+</component>

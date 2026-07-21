@@ -7,14 +7,13 @@
 ' ---------- Channel details dialog ----------
 
 sub showCurrentChannelInfo()
-    if m.flatChannelList = invalid or m.flatChannelList.Count() = 0 then return
-    if m.currentChannelIndex < 0 or m.currentChannelIndex >= m.flatChannelList.Count() then return
-    channel = m.flatChannelList[m.currentChannelIndex]
+    channel = m.playingChannel
     if channel = invalid then return
 
-    ' Order: Channel, Playlist, State, Format, Player size, Audio tracks
-    ' (+ codecs/bitrate/subtitles alongside), Video URL, Position.
-    message = "Channel: " + cleanChannelTitle(channel) + chr(10)
+    ' Order: Channel name, Playlist, State, Format, Player size, Audio tracks
+    ' (+ codecs/bitrate/subtitles alongside), Channel Number, Video URL (last
+    ' -- gets extra wrap room since some sources hand out very long URLs).
+    message = "Channel name: " + cleanChannelTitle(channel) + chr(10)
 
     serverName = currentServerName()
     if serverName <> "" then message = message + "Playlist: " + serverName + chr(10)
@@ -68,11 +67,17 @@ sub showCurrentChannelInfo()
         if captionTracks <> invalid then message = message + "Subtitles: " + captionTracks.Count().ToStr() + chr(10)
     end if
 
-    if channel.url <> invalid then message = message + "Video URL: " + channel.url + chr(10)
+    channelNum = -1
+    if channel.url <> invalid then channelNum = findChannelIndexByUrl(channel.url)
+    if channelNum >= 0 and m.flatChannelList <> invalid then
+        message = message + "Channel Number: " + (channelNum + 1).ToStr() + " of " + m.flatChannelList.Count().ToStr() + chr(10)
+    end if
 
-    message = message + "Position: " + (m.currentChannelIndex + 1).ToStr() + " of " + m.flatChannelList.Count().ToStr()
+    ' Video URL goes last and gets extra wrap room (see dialogHeight below) --
+    ' some sources hand out very long URLs.
+    if channel.url <> invalid then message = message + "Video URL: " + channel.url
 
-    _showSimpleDialog("Channel information", message, ["OK"], "onSimpleDialogClosed")
+    _showThemedMessageDialog("Channel information", message, ["OK"], "onSimpleDialogClosed", 1200, 750, "left")
     resetOptionsDialogTimer()
 end sub
 
@@ -116,6 +121,17 @@ function _describeCodec(rawCodec as Dynamic) as String
 end function
 
 sub onSimpleDialogClosed()
-    _closeDialog()
+    if m.themedMessageDialog.buttonSelected = -1 then return   ' -1 is the reset default, never a real press
+    _closeThemedMessageDialog()
+    ' Explicitly defocus before reclaiming scene focus, same as
+    ' playChannel()/_goFullscreenFromGrid() -- prevents the video node
+    ' retaining focus and silently swallowing every key. Log evidence
+    ' (build 302) showed themedMessageDialog itself also still held focus
+    ' after m.top.setFocus(true) alone, despite Roku's docs saying setFocus
+    ' should release the prior holder automatically -- so it needs the same
+    ' explicit defocus as previewVideo.
+    if m.previewVideo <> invalid then m.previewVideo.setFocus(false)
+    m.themedMessageDialog.setFocus(false)
     m.top.setFocus(true)
+    print ">>> CHANNELINFO CLOSE: top.hasFocus="; m.top.hasFocus(); " top.isInFocusChain="; m.top.isInFocusChain(); " dialog.hasFocus="; m.themedMessageDialog.hasFocus(); " previewVideo.hasFocus="; m.previewVideo.hasFocus(); " isPlayingVideo="; m.isPlayingVideo; " barVisible="; m.barVisible
 end sub

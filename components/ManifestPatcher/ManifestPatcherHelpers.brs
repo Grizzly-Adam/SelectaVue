@@ -1,7 +1,6 @@
 ' ==================== ManifestPatcherHelpers.brs ====================
-' Private helper functions for ManifestPatcher task:
-' HTTP fetch, CR stripping, Flussonic URL builders, fMP4 detection,
-' URL absolutising, tmp: writer, iif, and segment truncation.
+' Private helpers for ManifestPatcher: HTTP fetch, CR stripping, Flussonic
+' URL builders, fMP4 detection, URL absolutising, tmp: writer, iif.
 
 ' ---------- Private helpers ----------
 
@@ -39,17 +38,13 @@ function _buildFlussonicMpegtsUrl(url as String) as String
     return ""
 end function
 
+' Any Flussonic URL -> its video.m3u8 equivalent (e.g. .../index.m3u8 -> .../video.m3u8)
 function _buildFlussonicVideoUrl(url as String) as String
-    ' Given any Flussonic URL, return the video.m3u8 equivalent for MPEG-TS delivery
-    ' e.g. http://host:port/STREAM_NAME/index.m3u8 → http://host:port/STREAM_NAME/video.m3u8
-    ' Strips query string, removes the filename, appends video.m3u8
     qPos  = url.InStr("?")
     clean = iif(qPos > 0, Left(url, qPos), url)  ' qPos is 0-based, so Left(url, qPos) is everything before "?"
     ' Find the last slash and replace everything after it with video.m3u8
     for i = Len(clean) to 1 step -1
-        if Mid(clean, i, 1) = "/" then
-            return Left(clean, i) + "video.m3u8"
-        end if
+        if Mid(clean, i, 1) = "/" then return Left(clean, i) + "video.m3u8"
     end for
     return ""
 end function
@@ -127,45 +122,4 @@ end sub
 function iif(condition as Boolean, trueVal as Dynamic, falseVal as Dynamic) as Dynamic
     if condition then return trueVal
     return falseVal
-end function
-
-' Truncates a media playlist to the first N EXTINF segments.
-' Keeps all header tags (#EXTM3U, #EXT-X-VERSION, #EXT-X-MAP, etc.)
-' and drops trailing segments beyond the limit.
-' Does NOT add EXT-X-ENDLIST -- keeps it a live playlist.
-function _truncateToSegments(body as String, maxSegs as Integer) as String
-    lines    = body.Split(Chr(10))
-    out      = []
-    segCount = 0
-    i        = 0
-
-    while i < lines.Count()
-        line    = lines[i]
-        trimmed = _trim(line)
-
-        if segCount < maxSegs then
-            if Left(trimmed, 8) = "#EXTINF:" then
-                ' Only include EXTINF if we still have room for one more segment
-                out.Push(line)
-            else if trimmed <> "" and Left(trimmed, 1) <> "#" then
-                ' Segment URL
-                out.Push(line)
-                segCount = segCount + 1
-            else
-                ' Header tag or empty line
-                out.Push(line)
-            end if
-        end if
-        ' If segCount >= maxSegs, skip everything (no trailing EXTINF, no extra segments)
-
-        i = i + 1
-    end while
-
-    result = ""
-    j = 0
-    while j < out.Count()
-        result = result + out[j] + Chr(10)
-        j = j + 1
-    end while
-    return result
 end function

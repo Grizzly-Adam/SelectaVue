@@ -1,35 +1,17 @@
 ' ==================== HiddenChannels.brs ====================
-' Per-playlist permanently-hidden channels.
+' Per-playlist permanently-hidden channels. Mirrors Favorites.brs's storage
+' shape: roRegistrySection "hiddenChannels", one key per playlist index,
+' each value a JSON array of hidden channel URLs.
 '
-' Storage: roRegistrySection "hiddenChannels", one key per playlist using its
-' array index ("playlist_0", "playlist_1", ...), each value a JSON array of
-' hidden channel URLs for that playlist. Mirrors Favorites.brs's storage
-' shape exactly.
+' UI: 5th button on the fullscreen channel bar toggles hidden status on the
+' playing channel (same immediate toggle pattern as Favorite). "Show Hidden
+' Channels" / "Show All Channels" lives in the playlist options dialog
+' (PlaylistEditDialogs.brs).
 '
-' UI: a 5th button on the fullscreen channel bar (see ChannelBar.brs) toggles
-' hidden status on whatever channel is currently playing — same immediate,
-' no-confirmation pattern as the Favorite button, and it's a toggle both
-' ways, so unhiding is just: play that channel from the Hidden Channels view
-' and press the same button again. "Show Hidden Channels" / "Show All
-' Channels" lives in the playlist options dialog (options/* key on the
-' playlist panel — see PlaylistEditDialogs.brs), only offered for whichever
-' playlist is currently loaded.
-'
-' Hidden channels are excluded from the main grid AND the Favorites view
-' entirely — see rebuildVisibleChannelTree(), called from SetContent() in
-' MainScene.brs in place of assigning m.get_channel_list.content straight to
-' m.allChannels. "Show Hidden Channels" switches the grid to a filtered view
-' of only hidden channels for the current playlist (showHiddenChannelsView()),
-' entered/exited the same way as the Favorites view.
-'
-' m.rawAllChannels holds the untouched parse from get_channel_list (set once
-' per playlist load in SetContent) so both the visible tree and the hidden
-' view can be rebuilt from the same source without re-fetching.
-'
-' (An earlier long-press-OK-on-the-grid design was dropped — the grid's
-' LabelList fires its native selection on press-down regardless of hold
-' duration, so there was no way to suppress the resulting preview/fullscreen
-' jump before showing a confirmation dialog.)
+' Hidden channels are excluded from the main grid AND Favorites view -- see
+' rebuildVisibleChannelTree(). m.rawAllChannels holds the untouched parse
+' from get_channel_list so both the visible tree and the hidden view can
+' rebuild from the same source without re-fetching.
 
 function HIDDEN_CHANNELS_REG_SECTION() as String
     return "hiddenChannels"
@@ -140,15 +122,16 @@ end sub
 ' alone is enough during the initial SetContent() load, since the rest of
 ' that flow already assigns m.channelList.content afterward).
 sub _refreshVisibleChannelGrid()
+    _captureCurrentlyPlayingChannel()   ' before rebuildVisibleChannelTree() replaces the tree below
     rebuildVisibleChannelTree()
     buildFlatChannelList()
+    jumpIndex = _resyncOrPinCurrentChannel()
     _syncFavoriteStars()
     _updateChannelListHeader()
     if m.channelList <> invalid then
         m.channelList.content    = m.allChannels
-        m.channelList.jumpToItem = 0
+        m.channelList.jumpToItem = jumpIndex
     end if
-    m.currentChannelIndex = 0
 end sub
 
 ' ---------- Hidden Channels grid view ----------
@@ -163,15 +146,19 @@ sub showHiddenChannelsView()
 end sub
 
 sub _rebuildHiddenChannelsGrid()
+    _captureCurrentlyPlayingChannel()   ' before m.allChannels gets replaced below
     m.allChannels = buildSortedChannelTree(_filteredChannelItems(true))
     buildFlatChannelList()
+    ' Currently-playing channel might not be hidden (or the hidden list just
+    ' resorted around it) -- resync or pin it back rather than letting the
+    ' channel bar silently drift from what's actually playing.
+    jumpIndex = _resyncOrPinCurrentChannel()
     _syncFavoriteStars()
     _updateChannelListHeader()
     if m.channelList <> invalid then
         m.channelList.content    = m.allChannels
-        m.channelList.jumpToItem = 0
+        m.channelList.jumpToItem = jumpIndex
     end if
-    m.currentChannelIndex = 0
 end sub
 
 ' Exits the Hidden Channels view back to the normal grid. Mirrors the note
@@ -206,8 +193,7 @@ end sub
 ' confirmation. Unhiding works the same way: play the channel from the
 ' Hidden Channels view, press this same button again.
 sub toggleHideForCurrentChannel()
-    if m.flatChannelList = invalid or m.currentChannelIndex < 0 or m.currentChannelIndex >= m.flatChannelList.Count() then return
-    channel = m.flatChannelList[m.currentChannelIndex]
+    channel = m.playingChannel
     if channel = invalid then return
 
     nowHidden = toggleHiddenChannel(channel)

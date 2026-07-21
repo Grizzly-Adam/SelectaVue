@@ -188,6 +188,7 @@ end sub
 ' here) but would silently break if this logic ever changes.
 sub _rebuildFavoritesGrid()
     if m.fullFlatChannelList = invalid then m.fullFlatChannelList = m.flatChannelList
+    _captureCurrentlyPlayingChannel()   ' before m.allChannels/m.flatChannelList get replaced below
 
     ' Group favorited channels by their original category (found via
     ' GetParent() — each channel is a child of its category's SECTION node
@@ -211,13 +212,16 @@ sub _rebuildFavoritesGrid()
 
     m.allChannels = buildSortedChannelTree(items)
     buildFlatChannelList()
+    ' Currently-playing channel might not be a favorite (or the favorites
+    ' list just resorted around it) -- resync or pin it back rather than
+    ' letting the channel bar silently drift from what's actually playing.
+    jumpIndex = _resyncOrPinCurrentChannel()
     _syncFavoriteStars()
     _updateChannelListHeader()
     if m.channelList <> invalid then
         m.channelList.content    = m.allChannels
-        m.channelList.jumpToItem = 0
+        m.channelList.jumpToItem = jumpIndex
     end if
-    m.currentChannelIndex = 0
 end sub
 
 ' Note: there's no separate "exit favorites view" function. Selecting any

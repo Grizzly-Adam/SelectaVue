@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    First-run welcome dialog. Not a system Dialog -- a permanent (normally
+    hidden) child of MainScene, shown/hidden via the show field, same
+    full-screen/edge-to-edge/logo-instead-of-title visual language as
+    PhoneKeyboardDialog (see that component for the established pattern).
+
+    Built as its own component rather than reusing the generic themed
+    _showSimpleDialog() because that's a stock Roku Dialog node -- it can't
+    go edge-to-edge, can't drop its title bar for a logo, and can't do the
+    inline bold/bright "SelectaVue" emphasis this screen needs.
+
+    Public interface:
+        show      (boolean, write) - true opens the dialog
+        dismissed (boolean, read, onChange, alwaysNotify) - fires when the
+                   single "Next" button is pressed
+-->
+<component name="WelcomeDialog" extends="Group">
+    <interface>
+        <field id="show"      type="boolean" value="false" onChange="onShowChanged"/>
+        <field id="dismissed" type="boolean" value="false" alwaysNotify="true"/>
+    </interface>
+
+    <script type="text/brightscript" uri="pkg:/components/WelcomeDialog/WelcomeDialog.brs"/>
+
+    <children>
+
+    <Rectangle id="wdBorder" translation="[0, 0]" width="1920" height="1080" color="0x8fcdc1FF" visible="false">
+        <Rectangle id="wdPanel" translation="[6, 6]" width="1908" height="1068" color="0x024c48FF">
+
+            <Poster id="wdLogo"
+                translation="[594, 40]"
+                width="720"
+                height="180"
+                uri="pkg:/images/selectaview.png"/>
+
+            <!-- Dynamically populated in .brs -- inline bold/bright
+                 "SelectaVue" segments plus wrapped normal-text lines -->
+            <Group id="wdTextArea" translation="[137, 260]"/>
+
+            <Rectangle id="wdNextBtnBorder" translation="[754, 900]" width="412" height="72" color="0xFFFFFFFF">
+                <Rectangle id="wdNextBtn" translation="[4, 4]" width="404" height="64" color="0x5A8A82FF">
+                    <Label id="wdNextBtnLabel"
+                        text="NEXT"
+                        width="404"
+                        height="64"
+                        horizAlign="center"
+                        vertAlign="center"
+                        font="font:MediumBoldSystemFont"
+                        color="0xE8F5F3FF"/>
+                </Rectangle>
+            </Rectangle>
+
+        </Rectangle>
+    </Rectangle>
+
+    </children>
+
+</component>

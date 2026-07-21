@@ -79,11 +79,49 @@ end sub
 ' near-identical CreateObject("roSGNode", "Dialog")/title/message/buttons/
 ' m.top.dialog assignments scattered across the playlist and media-info
 ' dialog flows. Returns the dialog node in case the caller needs it.
-function _showSimpleDialog(title as String, message as String, buttons as Object, buttonCallback = "" as String) as Object
+' themed=true applies the same teal color scheme used by the retry ladder
+' overlay (reconnectOverlay in MainScene.xml: ACCENT_TEAL border/text,
+' ACCENT_TEAL_DARK-ish fill) via dialog_bg_teal.9.png and
+' dialog_btn_focus_teal.9.png. Only opt-in callers are affected; existing
+' calls with the default (false) keep the stock Roku Dialog look.
+function _showSimpleDialog(title as String, message as String, buttons as Object, buttonCallback = "" as String, themed = false as Boolean) as Object
     dialog = CreateObject("roSGNode", "Dialog")
     dialog.title = title
     if message <> "" then dialog.message = message
     dialog.buttons = buttons
+    if themed then
+        dialog.backgroundUri = "pkg:/images/dialog_bg_teal.9.png"
+        dialog.titleColor = ACCENT_TEAL()
+        dialog.messageColor = "0xE8F5F3FF"
+        ' Match the retry ladder's CANCEL/RETRY label, which stays the same
+        ' teal regardless of focus state (it's a static label, not a real
+        ' focused/unfocused Button) -- so keep our text color constant too.
+        dialog.buttonGroup.textColor = ACCENT_TEAL()
+        dialog.buttonGroup.focusedTextColor = ACCENT_TEAL()
+        dialog.buttonGroup.focusBitmapUri = "pkg:/images/dialog_btn_focus_teal.9.png"
+        if buttons <> invalid and buttons.Count() = 1 then
+            ' Single-button (OK-only) dialogs: show the same teal highlight
+            ' as the "footprint" (pre-focus) look, so the button reads as
+            ' selected immediately on open instead of only after the user
+            ' arrows onto it -- there's nothing else to navigate to anyway.
+            ' Skipped for multi-button menus (playlist options, etc.) since
+            ' forcing every button to look focused at once would defeat the
+            ' point of showing which one is actually selected.
+            dialog.buttonGroup.focusFootprintBitmapUri = "pkg:/images/dialog_btn_focus_teal.9.png"
+            for each btn in dialog.buttonGroup.getChildren(-1, 0)
+                btn.showFocusFootprint = true
+                btn.iconUri = ""
+                btn.focusedIconUri = ""
+            end for
+        else
+            ' Multi-button menus still get the leading bullet/icon cleared,
+            ' just not the always-on footprint highlight.
+            for each btn in dialog.buttonGroup.getChildren(-1, 0)
+                btn.iconUri = ""
+                btn.focusedIconUri = ""
+            end for
+        end if
+    end if
     m.top.dialog = dialog
     if buttonCallback <> "" then dialog.observeField("buttonSelected", buttonCallback)
     return dialog
@@ -104,6 +142,52 @@ function _showKeyboardDialog(title as String, message as String, initialText as 
     if buttonCallback <> "" then dialog.observeField("buttonSelected", buttonCallback)
     return dialog
 end function
+
+' ---------- ThemedMessageDialog helper (title + message + 1-2 buttons) ----------
+' Replaces _showSimpleDialog for Name/URL Required errors and channel info,
+' where the stock Dialog's native title-divider didn't match this app's
+' theme -- see ThemedMessageDialog.xml's header comment.
+function _showThemedMessageDialog(title as String, message as String, buttons as Object, buttonCallback = "" as String, width = 700 as Float, height = 280 as Float, messageAlign = "center" as String) as Object
+    dialog = m.themedMessageDialog
+    if dialog = invalid then return invalid
+    dialog.dialogTitle  = title
+    dialog.message      = message
+    dialog.buttons      = buttons
+    dialog.dialogWidth  = width
+    dialog.dialogHeight = height
+    dialog.messageAlign = messageAlign
+    if buttonCallback <> "" then dialog.observeField("buttonSelected", buttonCallback)
+    dialog.show = true
+    return dialog
+end function
+
+sub _closeThemedMessageDialog()
+    if m.themedMessageDialog <> invalid then
+        m.themedMessageDialog.unobserveField("buttonSelected")
+        m.themedMessageDialog.show = false
+    end if
+end sub
+
+' ---------- ThemedMenuDialog helper (title + vertical button list) ----------
+' Replaces _showSimpleDialog's buttons array for the playlist options menu.
+' Panel height is computed by the component itself from the button count.
+function _showThemedMenuDialog(title as String, buttons as Object, buttonCallback = "" as String, width = 640 as Float) as Object
+    dialog = m.themedMenuDialog
+    if dialog = invalid then return invalid
+    dialog.dialogTitle = title
+    dialog.buttons     = buttons
+    dialog.dialogWidth = width
+    if buttonCallback <> "" then dialog.observeField("buttonSelected", buttonCallback)
+    dialog.show = true
+    return dialog
+end function
+
+sub _closeThemedMenuDialog()
+    if m.themedMenuDialog <> invalid then
+        m.themedMenuDialog.unobserveField("buttonSelected")
+        m.themedMenuDialog.show = false
+    end if
+end sub
 
 ' ---------- Shared color constants ----------
 ' These specific colors exist both as XML default paint (channel bar
@@ -128,6 +212,18 @@ end function
 
 function ICON_DIM_COLOR() as String
     return "0x999999FF"   ' off-state tint for toggle icons (Favorite/CC)
+end function
+
+' ---------- Diagnostic timing (buffer-stall investigation) ----------
+' Milliseconds since m.channelLoadTimer was started (playChannel()'s fresh-load
+' branch, and reloadCurrentChannel()) -- NOT reset per retry-ladder step, so
+' every BUFFER/STALL/RETRY/SOFT STEP-DOWN print's timestamp is on one shared
+' timeline for the whole load+retry sequence. Lets us read off real elapsed
+' durations between log lines instead of guessing from timer configs. Returns
+' -1 if no load is in progress (timer never started, or print is stale).
+function _loadElapsedMs() as Integer
+    if m.channelLoadTimer = invalid then return -1
+    return m.channelLoadTimer.TotalMilliseconds()
 end function
 
 function APP_BACKGROUND_TEAL() as String
@@ -166,6 +262,16 @@ function detectStreamFormat(url as String) as String
 
     ' Check original URL for TVHeadend passthrough profile (query string already stripped above so check original)
     if url.InStr("profile=pass") > 0 then return "ts"                                ' TVHeadend ?profile=pass is always raw MPEG-TS
+
+    ' Stalker/Ministra portal play.php?...&extension=ts&... (the mac=-address-based
+    ' "line" portals MAG boxes use) -- extension=ts here is a query parameter value
+    ' signaling a raw continuous MPEG-TS response, not a ".ts" file extension on the
+    ' path (that's live.php, so none of the .EndsWith() checks above ever catch it).
+    ' Forcing "hls" on this made Roku's strict HLS demuxer choke trying to parse a
+    ' raw TS stream as HLS-segmented content -- errorCode=-3 "reader pick stream
+    ' error:bad:parsing failed" -- while VLC played the same URL fine since it
+    ' auto-detects content type from the byte stream rather than assuming from the URL.
+    if url.InStr("extension=ts") > 0 then return "ts"
 
     return "hls"
 end function
@@ -248,6 +354,20 @@ function getFriendlyError(errorMsg as String) as String
         return "The stream could not be loaded. The channel may be offline or the URL may be invalid."
     end if
     msg = LCase(errorMsg)
+
+    ' The short errorMsg Roku hands us here (e.g. "malformed data") doesn't
+    ' carry the actual decoder detail -- that only shows up in errorStr
+    ' (e.g. "decoder:pump:Unsupported AAC stream."), saved separately as
+    ' m.savedErrorStr alongside m.savedErrorMsg in ChannelNav.brs. Check both
+    ' so a genuine hardware-decoder rejection gets its own clear message
+    ' instead of falling through to the generic "format/codec" case below or,
+    ' worse, the raw "Playback error: malformed data" fallback.
+    detail = ""
+    if m.savedErrorStr <> invalid then detail = LCase(m.savedErrorStr)
+    if detail.InStr("unsupported aac") >= 0 or (detail.InStr("decoder") >= 0 and detail.InStr("aac") >= 0) then
+        return "Audio format not supported by this device. Ask the provider for a plain AAC audio version, or try a different Roku model."
+    end if
+
     if msg.InStr("404") >= 0 or msg.InStr("not found") >= 0 then
         return "Stream not found (404). The channel URL may be incorrect or the stream has moved."
     else if msg.InStr("403") >= 0 or msg.InStr("forbidden") >= 0 then
@@ -294,53 +414,23 @@ function _channelLogoUrl(channel as Object) as String
     return ""
 end function
 
-' ---------- Playlist-switch channel continuity ("Now Playing" pin) ----------
-' m.currentChannelIndex is an index into m.flatChannelList, which is rebuilt
-' from scratch every time a playlist loads. If a channel is actively playing
-' when the user picks a different playlist (or reloads the current one) from
-' the side panel, that index becomes meaningless the moment the new list is
-' built.
-'
-' _resyncOrPinChannelAfterPlaylistSwitch() (called from SetContent(), AFTER
-' the new playlist's normal buildFlatChannelList() pass) handles this two ways:
-'   - If the same channel/URL is already naturally present in the new
-'     playlist (e.g. it happens to exist in both), just point
-'     currentChannelIndex at that existing entry. No duplicate row, so no
-'     risk of the same channel showing up starred twice.
-'   - Otherwise, pin a copy of it under a real "Now Playing" SECTION node
-'     APPENDED at the very END of the grid (last child, not first). It MUST
-'     carry contenttype="SECTION" (and an id) exactly like every real
-'     category node does (see buildSortedChannelTree() in PlaylistSort.brs)
-'     -- LabelList uses that field, not "has children", to tell a section
-'     header apart from a plain leaf row.
-'
-'     It goes at the END specifically so it can later be removed cleanly:
-'     removing/inserting at the FRONT shifts every other index down/up by
-'     one, and several callers (changeChannel()'s surf-dwell capture,
-'     checkState()'s playingPreviewIndex/loadingChannelIndex bookkeeping in
-'     ChannelNav.brs) grab an index before calling into
-'     playChannel()/playPreviewChannel() and use it after -- an earlier
-'     front-inserted version of this corrupted m.previousChannelIndex and
-'     broke the flashback/replay button. Appending at the tail means
-'     removing it later only invalidates indices that were already pointing
-'     AT it (which safely no-op via the existing ">= Count()" guards
-'     elsewhere) and leaves every other index's meaning completely
-'     unaffected.
-' Once pinned, m.currentChannelIndex points at a real channel node with real
-' title/url/description/logo -- so the channel bar, preview name/logo, and
-' favorite toggle all keep working completely unchanged, with no fallback
-' special-casing needed anywhere else.
-'
-' The pin is removed outright the instant the user actually tunes to a
-' DIFFERENT channel -- see _clearNowPlayingPinIfChanging(), called from
-' playChannel()/playPreviewChannel() in VideoCore.brs -- so nothing from the
-' previous playlist lingers once you've moved on.
+' ---------- Channel continuity across a tree rebuild ("Now Playing" pin) ----------
+' A tree rebuild (playlist switch, Favorites/Hidden view toggle, hide/unhide)
+' can leave m.currentChannelIndex pointing at the wrong channel. Fix:
+' _resyncOrPinCurrentChannel() either re-points the index at the same
+' channel if it's still in the new tree, or pins a copy under a "Now
+' Playing" SECTION node appended at the END of the grid (must be appended,
+' not prepended -- prepending shifts every other index and broke replay/
+' flashback). Removed once the user tunes to a different channel -- see
+' _clearNowPlayingPinIfChanging() in VideoCore.brs.
 
-' Captures the channel to carry over BEFORE a playlist switch. Deliberately
+' Captures whichever channel is actually playing/loading right now, BEFORE
+' the tree gets rebuilt for any reason (playlist switch/reload, entering or
+' leaving Favorites/Hidden Channels, a hide/unhide toggle). Deliberately
 ' prefers m.loadingChannelIndex (the channel currently being tuned to, set
 ' the instant a load starts) over m.playingPreviewIndex (the last one that
 ' actually reached "playing"), over m.currentChannelIndex. If the user just
-' changed channel and it's still buffering when the playlist switch happens,
+' changed channel and it's still buffering when the rebuild happens,
 ' playingPreviewIndex is still the PREVIOUS channel — checkState() hasn't
 ' fired "playing" for the new one yet — so preferring it would capture the
 ' wrong (stale, already-left) channel instead of the one actually being
@@ -352,54 +442,49 @@ end function
 ' the preview window if the user moved the highlight after selecting a
 ' channel without picking a new one. Capturing the cursor position instead
 ' of what's really playing showed the wrong channel (or no pin at all, if
-' the highlighted channel happened to exist in the destination playlist)
-' after switching back. GridInput.brs already has to re-sync
-' currentChannelIndex from playingPreviewIndex for the same reason in a
-' couple of places.
-sub _captureChannelBeforePlaylistSwitch()
-    m.channelBeforePlaylistSwitch = invalid
+' the highlighted channel happened to exist in the destination tree) after
+' rebuilding. GridInput.brs already has to re-sync currentChannelIndex from
+' playingPreviewIndex for the same reason in a couple of places.
+sub _captureCurrentlyPlayingChannel()
+    m.channelBeforeRebuild = invalid
     idx = m.loadingChannelIndex
     if idx = invalid or idx < 0 then idx = m.playingPreviewIndex
     if idx = invalid or idx < 0 then idx = m.currentChannelIndex   ' nothing loaded/confirmed yet -- best guess
     if m.flatChannelList <> invalid and idx >= 0 and idx < m.flatChannelList.Count() then
         channel = m.flatChannelList[idx]
         if channel <> invalid and channel.url <> invalid and channel.url <> "" then
-            m.channelBeforePlaylistSwitch = channel
+            m.channelBeforeRebuild = channel
         end if
     end if
 end sub
 
-' Called from SetContent() right after the new playlist's own
-' buildFlatChannelList() pass. Returns the grid index the channel list
-' should jump to (0 if there's nothing special to restore). Always consumes
-' (clears) m.channelBeforePlaylistSwitch, and always resets any stale pin
-' bookkeeping left over from a previous load first.
+' Called right after a fresh buildFlatChannelList() pass, whatever triggered
+' the rebuild. Returns the grid index the channel list should jump to (0 if
+' there's nothing special to restore). Always consumes (clears)
+' m.channelBeforeRebuild, and always resets any stale pin bookkeeping left
+' over from a previous rebuild first.
 '
-' Also re-points m.playingPreviewIndex and m.loadingChannelIndex at the same
-' resolved index, not just m.currentChannelIndex -- GridInput.brs uses
-' playingPreviewIndex to re-correct currentChannelIndex back to "what's
-' actually playing" when you press back/right on the grid (see the comment
-' on _captureChannelBeforePlaylistSwitch() above for why that variable
-' exists). Left stale after a switch, it points at some unrelated channel in
-' the new list and clobbers the very index we just fixed the moment the user
-' presses one of those keys.
-function _resyncOrPinChannelAfterPlaylistSwitch() as Integer
+' Also re-points playingPreviewIndex/loadingChannelIndex at the same index,
+' not just currentChannelIndex -- GridInput.brs uses playingPreviewIndex to
+' re-correct focus back to "what's actually playing", so a stale value there
+' would clobber the fix the moment the user presses back/right.
+function _resyncOrPinCurrentChannel() as Integer
     m.pinnedNowPlayingUrl      = invalid
     m.pinnedNowPlayingNode     = invalid
-    m.replayFallbackActive = false   ' fresh playlist -- start the replay toggle clean
+    m.replayFallbackActive = false   ' fresh tree -- start the replay toggle clean
 
-    channel = m.channelBeforePlaylistSwitch
-    m.channelBeforePlaylistSwitch = invalid
+    channel = m.channelBeforeRebuild
+    m.channelBeforeRebuild = invalid
     if channel = invalid or channel.url = invalid or channel.url = "" then return 0
 
-    ' Already naturally in the new playlist -- just point at it, no pin needed.
+    ' Already naturally in the new tree -- just point at it, no pin needed.
     existingIdx = findChannelIndexByUrl(channel.url)
     if existingIdx >= 0 then
         m.currentChannelIndex  = existingIdx
         m.previousChannelIndex = -1
         m.playingPreviewIndex  = existingIdx
         m.loadingChannelIndex  = existingIdx
-        print ">>> NAV: Playlist switch -- "; channel.url; " already present in new playlist at "; existingIdx
+        print ">>> NAV: Tree rebuild -- "; channel.url; " already present at "; existingIdx
         return existingIdx
     end if
 
@@ -407,21 +492,15 @@ function _resyncOrPinChannelAfterPlaylistSwitch() as Integer
 
     pinIdx = _pinChannelAsNowPlaying(channel)
     m.previousChannelIndex = -1
-    print ">>> NAV: Playlist switch -- pinned now-playing channel under a Now Playing section at tail index "; pinIdx; " ("; channel.url; ")"
+    print ">>> NAV: Tree rebuild -- pinned now-playing channel under a Now Playing section at tail index "; pinIdx; " ("; channel.url; ")"
     return pinIdx
 end function
 
-' Pins `channel` as a "Now Playing" tail section in m.allChannels/
-' m.flatChannelList when it isn't naturally present there, pointing all the
-' "what's currently playing" index bookkeeping at it (currentChannelIndex,
-' playingPreviewIndex, loadingChannelIndex — see the comment on
-' _resyncOrPinChannelAfterPlaylistSwitch() above for why those three all need
-' to agree). Shared by that playlist-switch resync and by hiding the
-' currently-playing channel (toggleHideForCurrentChannel() in
-' HiddenChannels.brs) — same underlying problem: a channel that needs to
-' keep playing/surfing correctly even though it just dropped out of the
-' displayed tree. Cleared later by _clearNowPlayingPinIfChanging() once the
-' user tunes away. Returns the new pin index, or -1 if there's nothing to pin.
+' Pins `channel` as a "Now Playing" tail section when it isn't naturally in
+' the tree, pointing currentChannelIndex/playingPreviewIndex/loadingChannelIndex
+' all at it. Shared by playlist-switch resync and hiding the playing channel
+' (HiddenChannels.brs). Cleared by _clearNowPlayingPinIfChanging() once the
+' user tunes away. Returns the new pin index, or -1 if nothing to pin.
 function _pinChannelAsNowPlaying(channel as Object) as Integer
     if m.allChannels = invalid or channel = invalid or channel.url = invalid or channel.url = "" then return -1
 
@@ -447,21 +526,15 @@ function _pinChannelAsNowPlaying(channel as Object) as Integer
     return pinIdx
 end function
 
-' Called once the user has actually tuned away from the pinned channel.
-' Because the pin sits at the TAIL of the list (see comment above), removing
-' it only invalidates indices that were pointing AT it -- which safely no-op
-' via the existing ">= Count()" guards in jumpToPreviousChannel()/
-' GridInput.brs/ChannelBar.brs etc -- rather than shifting every other
-' index's meaning the way a front-removal did. No-op if there's no pin, or
-' if newUrl IS the pin (re-selecting what's already playing isn't a change).
+' Called once the user tunes away from the pinned channel. The pin sits at
+' the TAIL, so removing it only invalidates indices pointing AT it (safe
+' no-ops via existing ">= Count()" guards) rather than shifting others.
+' No-op if there's no pin, or newUrl IS the pin.
 sub _clearNowPlayingPinIfChanging(newUrl as String)
     if m.pinnedNowPlayingUrl = invalid then return
     if newUrl = m.pinnedNowPlayingUrl then return
 
-    ' Capture what's focused now (the channel the user just clicked) before
-    ' touching anything -- the pin sat at the TAIL, so removing it doesn't
-    ' shift anything before it, and this index is still correct once the
-    ' list is rebuilt.
+    ' Capture current focus before removing the tail pin -- still correct after rebuild.
     focusedBefore = -1
     if m.channelList <> invalid then focusedBefore = m.channelList.itemFocused
 
@@ -473,12 +546,8 @@ sub _clearNowPlayingPinIfChanging(newUrl as String)
     buildFlatChannelList()
 
     if m.channelList <> invalid then
-        ' Reassigning .content resets a LabelList's focus/scroll to the top.
-        ' jumpToItem alone right after wasn't reliable on-device -- setting
-        ' content to invalid first, then back, then setting BOTH
-        ' itemFocused and jumpToItem is the same repaint-while-preserving-
-        ' focus pattern _bounceListContent() already uses elsewhere in this
-        ' codebase (see Favorites.brs).
+        ' Reassigning .content resets scroll/focus -- bounce content then
+        ' restore focus, same pattern as _bounceListContent() (Favorites.brs).
         m.channelList.content = invalid
         m.channelList.content = m.allChannels
         if focusedBefore >= 0 and m.flatChannelList <> invalid and focusedBefore < m.flatChannelList.Count() then
@@ -543,4 +612,21 @@ function _currentLoadingChannelUrl() as String
     if ch = invalid or ch.url = invalid then return ""
     if m.proxyOriginalUrl <> "" then return m.proxyOriginalUrl
     return ch.url
+end function
+
+' Strips RetryLadder's &_HLS_skip=NO suffix and resolves a proxy session URL
+' back to the original channel URL. Used both for the clean retry base and
+' for staleness comparisons -- without normalizing both sides the same way,
+' a genuine error from the compat step or an active proxy session would
+' never match and get wrongly discarded as belonging to an abandoned channel.
+function _normalizeChannelUrl(url as String) as String
+    cleanUrl = url
+    if m.proxyOriginalUrl <> "" and Left(LCase(cleanUrl), 7) = "http://" and cleanUrl.InStr(":7171/") >= 0 then
+        cleanUrl = m.proxyOriginalUrl
+    end if
+    sepPos = cleanUrl.InStr("&_HLS_skip")
+    if sepPos > 0 then cleanUrl = Left(cleanUrl, sepPos)
+    sepPos = cleanUrl.InStr("?_HLS_skip")
+    if sepPos > 0 then cleanUrl = Left(cleanUrl, sepPos)
+    return cleanUrl
 end function

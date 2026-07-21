@@ -1,6 +1,6 @@
 # SelectaVue privacy policy
 
-**Last updated:** June 13, 2026
+**Last updated:** July 21, 2026
 
 ## 1. Introductions
 
@@ -10,7 +10,7 @@ SelectaVue ("we," "our," or "the app") respects your privacy and is committed to
 
 ### 2.1 Locally stored information
 
-All the information mentioned below is stored locally only on your Roku device. **We do not collect, transmit, or store this information on external servers**.
+All the information mentioned below is stored locally only on your Roku device. **We do not collect, transmit, or store this information on external servers**. The application does run small local network servers on the Roku device itself (for stream compatibility and for the optional phone-based text entry feature) — these only run as needed to communicate with your phone and streaming sources on your own local network, never with us or any external party.
 
 ### 2.2 Information that you provide
 
@@ -30,9 +30,9 @@ The application can store locally:
 - We do not collect personally identifiable information (name, address, email, etc.)
 - We do not track your location.
 - We do not collect usage or analytics data
-- We do not use cookies or similar tracking technologies
+- We do not use cookies or other technologies to track you or your activity
 - We do not access any other data on your Roku device
-- **We do not even have our own servers**
+- **We do not operate any external servers, and nothing you enter or watch is ever sent to us**
 
 ## 3. How your information is used
 
@@ -43,12 +43,13 @@ Locally stored information is used solely for:
 - Improve your user experience within the application
 
 ## 4. Information sharing
-
 **We do not share you information with third parties**. We don't even know third parties (nor do we care to). All information remains on your Roku device and is never transmitted to external servers, except:
 
 - Direct connections to the M3U playlist URLs you provide (to load channel content)
 - Video streams from the IPTV sources you select
-- Both of these are essential for playback, are between you and the content provider and do not involve us in anyway.
+- Some streaming sources require a session cookie to keep the video stream authenticated — this is relayed only between your Roku and that same source, the same way a web browser handles a site's session cookie, and is never used to track or identify you
+- If you use the optional phone-based text entry feature, your phone sends the text you type directly to your Roku device over your own local Wi-Fi network — this stays entirely within your home network and never reaches us or any external server
+- All of these are either essential for playback or are for the end-user's convenience, are between you and the content provider and do not involve us in anyway.
 
 ## 5. Data security
 

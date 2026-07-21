@@ -30,6 +30,19 @@
 ' ---------- Fullscreen key handling ----------
 
 function _handleFullscreenKey(key as String) as Boolean
+    ' A just-consumed OK that triggered fullscreen entry (grid double-OK,
+    ' quick-menu selection) can echo through to this handler on the same
+    ' physical press. This has to be checked BEFORE the channel-bar-owns-OK
+    ' branch below -- _goFullscreenFromGrid()/selectChannelFromList() both
+    ' show the bar (m.barVisible=true) as part of the same transition that
+    ' sets this flag, so by the time the echo arrives the bar-visible branch
+    ' would otherwise catch it first and activate whatever's focused there
+    ' (Favorite, index 0) instead of this having a chance to swallow it.
+    if key = "OK" and m.suppressNextVideoOptionsMenu then
+        clearOverlayOkSuppression()
+        return true
+    end if
+
     ' Channel bar owns left/right/OK while visible — checked first since it
     ' takes priority over the quick channel menu (the two are mutually exclusive)
     if m.barVisible then
@@ -97,10 +110,7 @@ function _handleFullscreenKey(key as String) as Boolean
         end if
 
     else if key = "OK" then
-        if m.suppressNextVideoOptionsMenu then
-            clearOverlayOkSuppression()
-            return true
-        else if m.overlayVisible then
+        if m.overlayVisible then
             channel = m.flatChannelList[m.currentChannelIndex]
             if channel <> invalid then
                 print ">>> NAV: OK-in-overlay playChannel, currentChannelIndex="; m.currentChannelIndex
@@ -208,7 +218,10 @@ sub _goFullscreenFromGrid()
     m.top.setFocus(true)
     if m.currentChannelIndex >= 0 and m.flatChannelList <> invalid and m.currentChannelIndex < m.flatChannelList.Count() then
         channel = m.flatChannelList[m.currentChannelIndex]
-        if channel <> invalid then showChannelBar(channel)
+        if channel <> invalid then
+            m.playingChannel = channel
+            showChannelBar()
+        end if
     end if
     saveLastState()
 end sub
@@ -222,6 +235,13 @@ sub _showQuickMenu()
     if m.allChannels = invalid then return
     m.channelOverlay.visible         = true
     m.overlayVisible                 = true
+    ' Refreshed from m.allChannels fresh on every open specifically because
+    ' this reference can otherwise go stale relative to m.flatChannelList if
+    ' the tree gets rebuilt (playlist switch, view toggle, hide/unhide) while
+    ' the menu isn't the thing driving that rebuild -- selectChannelFromList()
+    ' reads the overlay's own content rather than m.flatChannelList for
+    ' exactly this reason, since this reassignment is what keeps the two
+    ' reliably in agreement at selection time.
     m.channelOverlayList.content     = m.allChannels
     m.channelOverlayList.jumpToItem  = m.currentChannelIndex
     m.channelOverlayList.itemFocused = m.currentChannelIndex

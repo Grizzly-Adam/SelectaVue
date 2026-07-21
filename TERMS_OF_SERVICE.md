@@ -1,6 +1,6 @@
 # SelectaVue terms of service
 
-**Last updated:** June 13, 2026
+**Last updated:** July 21, 2026
 
 ## 1. Acceptance of the terms
 
@@ -88,7 +88,7 @@ Distributing or sharing illegal content
 Violating the privacy rights of third parties
 Any activity that violates local, state, or international laws
 
-## 8. Intellectual roperty rights
+## 8. Intellectual property rights
 
 ### 8.1 Application Ownership
 
@@ -139,7 +139,7 @@ These terms of use, together with our privacy policy, constitute the entire agre
 
 ## 15. Contact
 
-For questions about these terms of use, please contact us at::
+For questions about these terms of use, please contact the author at:
 
 - Email: grizzsoft@gmail.com
 - GitHub: https://github.com/Grizzly-Adam/SelectaVue
@@ -148,4 +148,4 @@ For questions about these terms of use, please contact us at::
 
 **IMPORTANT:** By using SelectaVue, you acknowledge that you have read, understood and agreed to be bound by these terms of use and our privacy policy.
 
-Legal notice:** SelectaVue is a media player. Users are responsible for ensuring they have the legal rights to access any content they view through the application. We do not support or condone piracy or unauthorized access to copyrighted content.
+**Legal notice:** SelectaVue is a media player. Users are responsible for ensuring they have the legal rights to access any content they view through the application. We do not support or condone piracy or unauthorized access to copyrighted content.

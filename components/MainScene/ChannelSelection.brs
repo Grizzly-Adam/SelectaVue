@@ -7,7 +7,7 @@ sub onChannelFocused()
     if m.isPlayingVideo then return
     if m.channelList = invalid then return
     if m.suppressFocusChange then return
-    if m.loadingDialogVisible then _dismissLoadingDialogForInput()
+    if m.loadingDialogVisible then return
     ' Up/down on the grid list is consumed natively (fires this observer)
     ' before it would ever reach onKeyEvent's reconnectOverlay handling —
     ' same underlying issue as the loading overlay. Cancel any in-flight
@@ -16,7 +16,17 @@ sub onChannelFocused()
     cancelAnyInFlightRetry()
     if _dismissScreensaverIfVisible() then return
     focusedIndex = m.channelList.itemFocused
-    channel = getChannelByFocusIndex(focusedIndex)
+    ' This fires on every single up/down move while scrolling the grid, not
+    ' just on selection -- getChannelByFocusIndex() would re-walk the whole
+    ' tree from the front on every keystroke just to answer "does something
+    ' exist at this index", which got noticeably slower the further down a
+    ' large playlist you'd scrolled. m.flatChannelList is the same data,
+    ' kept in sync with the grid's content by every rebuild path, so this is
+    ' an O(1) swap for the exact same answer.
+    channel = invalid
+    if m.flatChannelList <> invalid and focusedIndex >= 0 and focusedIndex < m.flatChannelList.Count() then
+        channel = m.flatChannelList[focusedIndex]
+    end if
     if channel <> invalid then
         if focusedIndex <> m.currentChannelIndex then
             hideBufferBar()
@@ -30,10 +40,7 @@ end sub
 sub onChannelSelected()
     if m.channelList = invalid then return
     if m.suppressFocusChange then return
-    if m.loadingDialogVisible then
-        _dismissLoadingDialogForInput()
-        return
-    end if
+    if m.loadingDialogVisible then return
     if _dismissScreensaverIfVisible() then return
 
     ' OK on the reconnect overlay is supposed to mean "cancel" (ladder actively
@@ -62,7 +69,10 @@ sub onChannelSelected()
     ' retry here too before acting on the selection.
     cancelAnyInFlightRetry()
     focusedIndex = m.channelList.itemFocused
-    channel      = getChannelByFocusIndex(focusedIndex)
+    channel      = invalid
+    if m.flatChannelList <> invalid and focusedIndex >= 0 and focusedIndex < m.flatChannelList.Count() then
+        channel = m.flatChannelList[focusedIndex]
+    end if
     if channel = invalid then return
     if _isChannelActivelyLoaded(channel.url) then
         print ">>> GRID: Double OK - going fullscreen"
@@ -90,6 +100,22 @@ sub onChannelSelected()
 end sub
 
 sub onOverlayChannelSelected()
+    ' Same issue and fix as onChannelSelected()'s guard above: m.channelOverlayList
+    ' has focus the whole time the quick menu is open, so it consumes OK
+    ' natively and fires this observer instead of ever reaching onKeyEvent's
+    ' reconnect-overlay intercept. Without this check, OK meant to cancel/
+    ' retry the ladder instead silently canceled it and played whatever
+    ' channel happened to be highlighted in the quick menu.
+    if m.reconnectOverlay <> invalid and m.reconnectOverlay.visible and m.reconnectState = "ladder" then
+        cancelRetryOverlay()
+        return
+    end if
+    if m.reconnectState = "gaveup" then
+        showRetryStatus("Retrying...")
+        reloadCurrentChannel()
+        return
+    end if
+
     m.suppressNextVideoOptionsMenu = true
     startOverlayOkSuppressionTimer()
     hideOverlay()

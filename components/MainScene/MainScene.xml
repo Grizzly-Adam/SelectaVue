@@ -268,7 +268,7 @@
         <!-- Buttons -->
         <Rectangle
             id="channelBarFavoriteBtn"
-            translation="[1288, 10]"
+            translation="[1248, 10]"
             width="56"
             height="56"
             color="0x3D5C56FF">
@@ -284,7 +284,7 @@
 
         <Rectangle
             id="channelBarCCBtn"
-            translation="[1354, 10]"
+            translation="[1314, 10]"
             width="62"
             height="56"
             color="0x3D5C56FF">
@@ -300,7 +300,7 @@
 
         <Rectangle
             id="channelBarLiveBtn"
-            translation="[1426, 10]"
+            translation="[1386, 10]"
             width="104"
             height="56"
             color="0x3D5C56FF">
@@ -315,7 +315,7 @@
 
         <Rectangle
             id="channelBarDetailsBtn"
-            translation="[1540, 10]"
+            translation="[1500, 10]"
             width="56"
             height="56"
             color="0x3D5C56FF">
@@ -333,7 +333,7 @@
              "currently showing", not "this toggle is active" -->
         <Rectangle
             id="channelBarHideBtn"
-            translation="[1606, 10]"
+            translation="[1566, 10]"
             width="76"
             height="56"
             color="0x3D5C56FF">
@@ -536,11 +536,18 @@
              once the gave-up state is reached (see reconnectActionLabel
              updates in Overlays.brs). OK does the corresponding action. -->
         <Rectangle
+            id="reconnectRetryBtnBorder"
+            translation="[223, 508]"
+            width="254"
+            height="44"
+            color="0x8fcdc1FF"/>
+
+        <Rectangle
             id="reconnectRetryBtn"
             translation="[225, 510]"
             width="250"
             height="40"
-            color="0x8fcdc133">
+            color="0x024c48FF">
             <Label
                 id="reconnectActionLabel"
                 translation="[0, 8]"
@@ -575,6 +582,34 @@
 
     <LocalProxy
         id="localProxy"/>
+
+    <!-- Custom text-entry dialog for playlist name/URL entry -- replaces
+         StandardKeyboardDialog with our own themed, full-screen keyboard
+         plus QR/phone text entry. See PhoneKeyboardDialog.xml's header
+         comment for the full rationale. -->
+    <PhoneKeyboardDialog
+        id="phoneKeyboardDialog"
+        visible="false"/>
+
+    <!-- First-run welcome dialog -- shown before the add-playlist flow when
+         no playlists exist yet. See WelcomeDialog.xml's header comment. -->
+    <WelcomeDialog
+        id="welcomeDialog"
+        visible="false"/>
+
+    <!-- Themed message popup (title + message + 1-2 buttons) -- replaces the
+         stock Dialog node for Name/URL Required errors and channel info.
+         See ThemedMessageDialog.xml's header comment. -->
+    <ThemedMessageDialog
+        id="themedMessageDialog"
+        visible="false"/>
+
+    <!-- Themed menu popup (title + vertical button list) -- replaces the
+         stock Dialog node for the playlist options menu. See
+         ThemedMenuDialog.xml's header comment. -->
+    <ThemedMenuDialog
+        id="themedMenuDialog"
+        visible="false"/>
 
 <!-- Deep linking (launch args + runtime roInputEvent) -->
 <script type="text/brightscript" uri="pkg:/components/MainScene/DeepLink.brs"/>

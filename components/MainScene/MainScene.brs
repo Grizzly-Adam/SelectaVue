@@ -116,6 +116,30 @@ sub init()
         m.localProxy.ObserveField("status", "onProxyStatusChanged")
     end if
 
+    ' PhoneKeyboardDialog — custom text-entry dialog (replaces
+    ' StandardKeyboardDialog for playlist name/URL entry)
+    m.phoneKeyboardDialog = m.top.FindNode("phoneKeyboardDialog")
+    if m.phoneKeyboardDialog <> invalid then
+        m.phoneKeyboardDialog.ObserveField("show", "onPhoneKeyboardDialogShowChanged")
+    end if
+
+    ' WelcomeDialog — first-run welcome screen
+    m.welcomeDialog = m.top.FindNode("welcomeDialog")
+    if m.welcomeDialog <> invalid then
+        m.welcomeDialog.ObserveField("dismissed", "onWelcomeDialogDismissed")
+    end if
+
+    ' ThemedMessageDialog / ThemedMenuDialog — custom popups replacing the
+    ' stock Dialog node for Name/URL Required errors, channel info, and the
+    ' playlist options menu. No permanent observers here -- each call site
+    ' attaches/detaches its own buttonSelected observer per open/close, same
+    ' convention as m.phoneKeyboardDialog.
+    m.themedMessageDialog = m.top.FindNode("themedMessageDialog")
+    m.themedMenuDialog    = m.top.FindNode("themedMenuDialog")
+    if m.themedMenuDialog <> invalid then
+        m.themedMenuDialog.ObserveField("show", "onThemedMenuDialogShowChanged")
+    end if
+
     ' ---- Field observers ----
     m.get_channel_list.ObserveField("content", "SetContent")
     m.playlistList.ObserveField("itemSelected", "onPlaylistSelected")
@@ -163,7 +187,6 @@ sub init()
     m.initialLaunch = true   ' true until first playlist loads and we go fullscreen
     m.loadingDialogVisible = false   ' true while the playlist-loading Dialog is up (see _showLoadingDialog)
     m.videoHiddenForLoadingDialog = false   ' true if _showLoadingDialog() hid previewVideo and still needs to restore it
-    m.suppressLoadingDialogDismissOnce = false   ' see _showLoadingDialog()
     m.textEntryDialogVisible = false   ' true while a StandardKeyboardDialog is up (see onDialogChanged in Timers.brs)
     m.isFirstRunSetupDialog = false   ' true only for the very-first-run add-playlist dialog (see below + PlaylistAddDialog.brs)
 
@@ -185,15 +208,18 @@ sub init()
     ' m.loadingChannelIndex  - channel index currently being loaded (set when load starts)
     ' m.playingPreviewIndex  - channel index confirmed playing in preview (set on state=playing)
     ' m.previousChannelIndex - channel index that was playing before the current one
+    ' m.playingChannel       - the channel actually loaded in the video node (fullscreen).
+    '                          Set only in playChannel(). currentChannelIndex is reused for
+    '                          grid/quick-menu browse position and drifts on arrow-only moves,
+    '                          so anything needing "what's playing" (bar, Favorite/Hide) reads
+    '                          this instead.
     m.loadingChannelIndex  = -1
     m.playingPreviewIndex  = -1
     m.previousChannelIndex = -1
-    ' m.replayFallbackActive - true when replay (grid or fullscreen) last
-    ' jumped to the per-playlist last-watched fallback rather than a
-    ' surf-based previousChannelIndex target -- lets a second replay press
-    ' toggle back to what's actually playing without changing the channel.
-    ' See GridInput.brs's replay handler and jumpToPreviousChannel() in
-    ' ChannelNav.brs.
+    m.playingChannel       = invalid
+    ' m.replayFallbackActive - true when replay last used the per-playlist
+    ' last-watched fallback (not a surf-based target) -- lets a second replay
+    ' press toggle back to what's actually playing. See GridInput.brs/ChannelNav.brs.
     m.replayFallbackActive = false
 
     ' ---- Unified retry state ----
@@ -216,6 +242,12 @@ sub init()
     m.proxyOriginalUrl          = ""   ' original channel URL when proxy is active
     m.channelBarLogoChannel     = invalid   ' channel whose logo is currently loading
     m.previewChannelLogoChannel = invalid   ' channel whose logo is currently loading
+    ' Bar and preview logos are never visible together -- once either resolves
+    ' an icon, the other reuses it on the next transition instead of re-fetching.
+    m.iconResolvedUrl           = ""        ' channel.url this resolution belongs to
+    m.iconResolvedUri           = ""        ' resolved icon uri for that channel (real or pkg: fallback)
+    m.channelBarLogoRequestedUri     = ""    ' uri _updateChannelBarLogo() last assigned -- guards against a stale loadStatus event misapplying to a later channel
+    m.previewChannelLogoRequestedUri = ""    ' same, for the preview logo
     m.surfDwellTimer            = invalid   '2s timer for previousChannelIndex commit
     m.surfStartChannelIndex     = -1        'channel at start of current surf session
 
@@ -281,13 +313,18 @@ sub init()
         end if
         loadPlaylist(m.playlists[playlistIndex].url)
     else
-        ' No playlists configured yet — the add-playlist dialog appears
-        ' before anything resembling a home screen. Roku's AppDialogInitiate/
-        ' AppDialogComplete beacons (cert criteria 3.2) subtract the time
-        ' spent in that dialog from the measured launch time; the matching
-        ' AppDialogComplete fires at every exit point of the flow in
-        ' PlaylistAddDialog.brs, gated on m.isFirstRunSetupDialog so it
-        ' fires exactly once and not on later in-app "add playlist" uses.
+        ' No playlists configured yet — hand off to the same add-playlist
+        ' entry point used by the in-app "Add Playlist" panel item.
+        ' showPlaylistManager() itself checks for the empty-playlists case
+        ' and shows the welcome screen first (explaining the app and
+        ' suggesting a starter playlist) before falling through into name
+        ' entry -- no separate welcome-dialog branch needed here.
+        ' Roku's AppDialogInitiate/AppDialogComplete beacons (cert criteria
+        ' 3.2) subtract the time spent in that dialog from the measured
+        ' launch time; the matching AppDialogComplete fires at every exit
+        ' point of the flow in PlaylistAddDialog.brs, gated on
+        ' m.isFirstRunSetupDialog so it fires exactly once and not on later
+        ' in-app "add playlist" uses.
         m.isFirstRunSetupDialog = true
         m.top.signalBeacon("AppDialogInitiate")
         showPlaylistManager()
@@ -321,17 +358,10 @@ sub SetContent()
         rebuildVisibleChannelTree()   ' m.allChannels = raw tree minus hidden channels
         buildFlatChannelList()
 
-        ' If a channel was actively playing when the user picked a different
-        ' playlist (or reloaded the current one) from the side panel, make
-        ' sure it's still represented correctly here -- resolved to its
-        ' natural entry if the same channel/URL also exists in this playlist,
-        ' otherwise pinned under a "Now Playing" section at the tail of the
-        ' grid (tail, not front -- see the comment in Utils.brs for why).
-        ' Must run before _syncFavoriteStars() so a pinned copy gets its star
-        ' computed the same way as everything else (and only once, not
-        ' doubled up with a separate natural entry for the same channel). See
-        ' _resyncOrPinChannelAfterPlaylistSwitch() in Utils.brs.
-        jumpIndex = _resyncOrPinChannelAfterPlaylistSwitch()
+        ' Resolve or pin the channel that was playing before this playlist
+        ' switch/reload -- see _resyncOrPinCurrentChannel() in Utils.brs.
+        ' Must run before _syncFavoriteStars() so a pinned copy gets a star too.
+        jumpIndex = _resyncOrPinCurrentChannel()
 
         _syncFavoriteStars()
         _updateChannelListHeader()
@@ -351,6 +381,13 @@ sub SetContent()
             m.channelList.SetFocus(true)
             resetGridInactivityTimer()
         end if
+        ' Save here, now that the switch has actually resolved (channel index
+        ' correctly resynced/pinned, any auto-launch already happened) -- not
+        ' at the moment a switch is triggered, since loadPlaylist() is async
+        ' and m.currentChannelIndex/flatChannelList still reflect the OLD
+        ' playlist until this point. Saving too early wrote a mismatched
+        ' (new playlist, old channel) pair to the registry.
+        saveLastState()
     else
         _showSimpleDialog("Error", "Could not load the list. Check URL.", ["OK"])
     end if
@@ -365,41 +402,19 @@ sub loadPlaylist(url as String)
 end sub
 
 ' ---------- Loading indicator ----------
-' Plain overlay, not a native Dialog — see the comment on loadingOverlay in
-' MainScene.xml for why. Dim is manual (screensaverOverlay), key handling is
-' manual (onKeyEvent in InputHandler.brs, checking m.loadingDialogVisible),
-' same proven pattern as reconnectOverlay elsewhere in this file/Overlays.brs.
-'
-' m.loadingDialogVisible is the source of truth for "a playlist load is in
-' progress" — independent of whether the overlay itself is currently shown,
-' since dismissing via up/down/left/OK/back hides the overlay but the fetch
-' keeps running; SetContent() cleans up properly (via _hideLoadingDialog)
-' whenever it actually finishes.
+' Plain overlay (not a native Dialog -- see MainScene.xml). Dim/key-handling
+' are manual, same pattern as reconnectOverlay. NOT dismissable by any input
+' (Home aside) -- only SetContent()'s completion handler clears it.
 
 sub _showLoadingDialog()
     print ">>> LOADDLG: _showLoadingDialog called"
     print ">>> LOADDLG: m.loadingOverlay="; m.loadingOverlay; " m.loadingOverlayBorder="; m.loadingOverlayBorder; " m.loadingOverlayLabel="; m.loadingOverlayLabel; " m.screensaverOverlay="; m.screensaverOverlay
     m.loadingDialogVisible = true
-    ' The same physical OK press that selects a playlist (natively consumed
-    ' by the focused playlistList, firing itemSelected -> onPlaylistSelected()
-    ' -> loadPlaylist() -> here) also still reaches Scene.onKeyEvent()
-    ' afterward as a raw key event -- InputHandler.brs's dismiss-on-input
-    ' check would then see m.loadingDialogVisible just turned true and
-    ' immediately hide everything below, all within the same key press,
-    ' before a frame ever renders. This flag tells that check to ignore the
-    ' very next key event (the trailing echo of this same press) rather
-    ' than treating it as a genuine, separate dismiss request.
-    m.suppressLoadingDialogDismissOnce = true
-    ' previewVideo keeps playing uninterrupted during a mid-session playlist
-    ' switch (by design — the same stream, no visual/audio interruption).
-    ' On some Roku models, actively-playing video renders via a hardware
-    ' overlay plane that sits ABOVE regular 2D SceneGraph elements
-    ' regardless of z-order, so this dialog could be genuinely
-    ' visible=true and still invisible underneath it — which is exactly why
-    ' it only ever showed up at boot (nothing playing yet, previewVideo
-    ' hidden) and never during a real switch. Hiding just the visual output
-    ' here doesn't touch playback or audio at all; restored in
-    ' _hideLoadingDialog()/_dismissLoadingDialogForInput() below.
+    ' previewVideo keeps playing uninterrupted during a mid-session switch.
+    ' On some Roku models, playing video renders on a hardware overlay plane
+    ' ABOVE 2D SceneGraph regardless of z-order, so this dialog could be
+    ' visible=true yet hidden underneath it -- hide just the visual output
+    ' (not playback/audio); restored in _hideLoadingDialog() below.
     m.videoHiddenForLoadingDialog = false
     if m.previewVideo <> invalid and m.previewVideo.visible then
         print ">>> LOADDLG: hiding previewVideo (was visible)"
@@ -430,15 +445,9 @@ sub _hideLoadingDialog()
     end if
 end sub
 
-' Fires when main.brs's memory monitor (roAppMemoryMonitor, or the
-' roDeviceInfo fallback on models that don't support it) reports rising
-' memory pressure. Logged prominently so it's easy to correlate against
-' proxy/retry-ladder activity during testing. Not currently doing anything
-' destructive beyond logging — SelectaVue doesn't hold large in-memory
-' caches (channel lists and settings cache are small associative data, not
-' bitmaps/textures), so there's no obvious safe thing to release yet. If
-' real low-memory reports show up in the field, this is the place to add
-' a response (e.g. dropping non-visible cached channel logos).
+' Fires when main.brs's memory monitor reports rising memory pressure.
+' Logged for correlation against proxy/retry-ladder activity; not currently
+' releasing anything (no large in-memory caches to drop yet).
 sub onMemoryPressure()
     pressure = m.global.memoryPressure
     if pressure = invalid then return
