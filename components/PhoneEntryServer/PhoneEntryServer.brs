@@ -141,17 +141,25 @@ function _peQueryParam(path as String, key as String) as Dynamic
 end function
 
 ' Decodes application/x-www-form-urlencoded text: '+' -> space, %XX -> byte.
+' NOTE: uses roByteArray.FromHexString() for the %XX conversion, not
+' Val("&H"+hex) -- Roku's BrightScript Val() does NOT support the &H hex
+' prefix (silently returns 0 rather than erroring), which meant every
+' single percent-encoded character decoded to Chr(0) -- invisible in a
+' console log, but responsible for the mangled "://" -> "|" and vanishing
+' characters seen in real playlist URLs (colons, slashes, and literal "+"
+' are exactly the characters browsers percent-encode).
 function _peUrlDecode(s as String) as String
     s = s.Replace("+", " ")
     out = ""
     i = 1
     n = s.Len()
+    hexBytes = CreateObject("roByteArray")
     while i <= n
         ch = Mid(s, i, 1)
         if ch = "%" and i + 2 <= n then
             hex = Mid(s, i + 1, 2)
-            code = Val("&H" + hex)
-            out = out + Chr(code)
+            hexBytes.FromHexString(hex)
+            out = out + Chr(hexBytes[0])
             i = i + 3
         else
             out = out + ch

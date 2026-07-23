@@ -1,6 +1,6 @@
 # SelectaVue privacy policy
 
-**Last updated:** July 21, 2026
+**Last updated:** July 23, 2026
 
 ## 1. Introductions
 

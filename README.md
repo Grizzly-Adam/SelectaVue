@@ -157,8 +157,8 @@ telnet YOUR_ROKU_IP 8085
 
 ## 📋 Version
 
-- **Current version:** 1.6.1
-- **Last updated:** July 21, 2026
+- **Current version:** 1.6.3
+- **Last updated:** July 23, 2026
 
 
 ## 📄 Legal
